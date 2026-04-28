@@ -1,0 +1,12 @@
+__pycache__/
+*.py[cod]
+
+.env
+.env.*
+!.env.example
+
+results.json
+results/
+
+# Local reference clone — not part of this project
+amm-challenge/

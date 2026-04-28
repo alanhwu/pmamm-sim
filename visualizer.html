@@ -1,0 +1,508 @@
+<!DOCTYPE html>
+<!--
+  Serve with: python -m pmamm_sim.cli serve --results-dir results/
+  Or:         python -m http.server 8080
+  Then open:  http://localhost:8080/visualizer.html
+  Results should be in a results/ folder in the same directory.
+-->
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>pmamm-sim Visualizer</title>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js"></script>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    background: #0f172a; color: #e2e8f0; min-height: 100vh;
+  }
+
+  /* ── loading / error ───────────────────────────────────── */
+  #loading {
+    display: flex; align-items: center; justify-content: center;
+    height: 100vh; font-size: 15px; color: #94a3b8; white-space: pre-line; text-align: center;
+  }
+  #loading.hidden { display: none; }
+
+  /* ── app shell ─────────────────────────────────────────── */
+  #app { display: none; height: 100vh; flex-direction: column; }
+  #app.visible { display: flex; }
+
+  /* ── top bar (dropdowns + aggregate) ───────────────────── */
+  #top-bar {
+    display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
+    padding: 10px 20px; background: #1e293b; border-bottom: 1px solid #334155;
+    font-size: 13px; flex-shrink: 0;
+  }
+  .strat-picker { display: flex; align-items: center; gap: 6px; }
+  .strat-picker label { color: #64748b; font-size: 11px; text-transform: uppercase; letter-spacing: .5px; }
+  .strat-select {
+    background: #0f172a; color: #e2e8f0; border: 1px solid #334155; border-radius: 6px;
+    padding: 5px 28px 5px 10px; font-size: 13px; font-family: inherit;
+    appearance: none; -webkit-appearance: none;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath d='M3 5l3 3 3-3' fill='none' stroke='%2394a3b8' stroke-width='1.5'/%3E%3C/svg%3E");
+    background-repeat: no-repeat; background-position: right 8px center;
+    cursor: pointer; outline: none; min-width: 160px;
+  }
+  .strat-select:focus { border-color: #6366f1; }
+  .vs-label { color: #475569; font-size: 12px; font-weight: 500; }
+
+  #agg-stats { display: flex; align-items: center; gap: 18px; margin-left: auto; flex-wrap: wrap; }
+  #agg-stats .agg-item { white-space: nowrap; }
+  #agg-stats .agg-label { color: #64748b; margin-right: 4px; }
+  #agg-stats .agg-value { font-weight: 600; }
+  .green { color: #4ade80; } .red { color: #f87171; }
+  .color-a { color: #818cf8; } .color-b { color: #f59e0b; }
+
+  /* ── body layout ───────────────────────────────────────── */
+  #body-wrap { display: flex; flex: 1; min-height: 0; }
+
+  /* ── sidebar ───────────────────────────────────────────── */
+  #sidebar {
+    width: 260px; flex-shrink: 0; background: #0d1526; border-right: 1px solid #1e293b;
+    overflow-y: overlay; overflow-y: auto;
+    scrollbar-width: thin; scrollbar-color: transparent transparent;
+  }
+  #sidebar:hover { scrollbar-color: #334155 transparent; }
+  #sidebar::-webkit-scrollbar { width: 6px; }
+  #sidebar::-webkit-scrollbar-track { background: transparent; }
+  #sidebar::-webkit-scrollbar-thumb { background: transparent; border-radius: 3px; }
+  #sidebar:hover::-webkit-scrollbar-thumb { background: #334155; }
+  #sidebar:hover::-webkit-scrollbar-thumb:hover { background: #475569; }
+  #sidebar h2 {
+    font-size: 11px; text-transform: uppercase; letter-spacing: .5px;
+    color: #475569; padding: 14px 14px 8px; font-weight: 600;
+  }
+  .market-item {
+    padding: 10px 14px; cursor: pointer; border-left: 3px solid transparent;
+    transition: background .1s;
+  }
+  .market-item:hover { background: rgba(30,41,59,.6); }
+  .market-item.selected { background: #1e293b; }
+  .market-item.win { border-left-color: #4ade80; }
+  .market-item.loss { border-left-color: #f87171; }
+  .market-item.tie { border-left-color: #475569; }
+  .market-item .mkt-q {
+    font-size: 13px; color: #cbd5e1; line-height: 1.35;
+    display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
+  }
+  .market-item .mkt-delta { font-size: 12px; font-weight: 600; margin-top: 3px; }
+  .market-item .mkt-trades { font-size: 11px; color: #475569; margin-top: 1px; }
+
+  /* ── main dashboard ────────────────────────────────────── */
+  #main {
+    flex: 1; min-width: 0; overflow-y: overlay; overflow-y: auto; padding: 24px 24px 48px;
+    scrollbar-width: thin; scrollbar-color: transparent transparent;
+  }
+  #main:hover { scrollbar-color: #334155 transparent; }
+  #main::-webkit-scrollbar { width: 6px; }
+  #main::-webkit-scrollbar-track { background: transparent; }
+  #main::-webkit-scrollbar-thumb { background: transparent; border-radius: 3px; }
+  #main:hover::-webkit-scrollbar-thumb { background: #334155; }
+  #main:hover::-webkit-scrollbar-thumb:hover { background: #475569; }
+
+  header { margin-bottom: 20px; }
+  header h1 { font-size: 18px; font-weight: 600; color: #f1f5f9; margin-bottom: 6px; }
+  .meta-row { display: flex; gap: 18px; flex-wrap: wrap; font-size: 12px; color: #94a3b8; }
+  .meta-row span { white-space: nowrap; }
+
+  /* ── cards ──────────────────────────────────────────────── */
+  .cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px; margin-bottom: 24px; }
+  .card { background: #1e293b; border: 1px solid #334155; border-radius: 8px; padding: 12px 14px; }
+  .card .label { font-size: 10px; text-transform: uppercase; letter-spacing: .5px; color: #64748b; margin-bottom: 3px; }
+  .card .value { font-size: 20px; font-weight: 600; }
+  .card .sub { font-size: 11px; color: #94a3b8; margin-top: 2px; }
+
+  /* ── charts ─────────────────────────────────────────────── */
+  .chart-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+  .chart-box { background: #1e293b; border: 1px solid #334155; border-radius: 8px; padding: 14px; position: relative; }
+  .chart-box h3 { font-size: 12px; font-weight: 500; color: #94a3b8; margin-bottom: 10px; }
+  .chart-box canvas { width: 100% !important; }
+  .chart-loading {
+    position: absolute; inset: 0; display: flex; align-items: center; justify-content: center;
+    background: rgba(15,23,42,.85); border-radius: 8px; font-size: 13px; color: #64748b; z-index: 2;
+  }
+  .chart-loading.hidden { display: none; }
+
+  /* ── responsive ────────────────────────────────────────── */
+  @media (max-width: 900px) { .chart-grid { grid-template-columns: 1fr; } }
+  @media (max-width: 700px) {
+    #body-wrap { flex-direction: column; }
+    #sidebar { width: 100%; max-height: 200px; border-right: none; border-bottom: 1px solid #1e293b; }
+  }
+</style>
+</head>
+<body>
+
+<div id="loading">Loading results/index.json&hellip;</div>
+
+<div id="app">
+  <div id="top-bar">
+    <div class="strat-picker">
+      <label for="sel-a">Strategy A</label>
+      <select id="sel-a" class="strat-select"></select>
+    </div>
+    <span class="vs-label">vs</span>
+    <div class="strat-picker">
+      <label for="sel-b">Strategy B</label>
+      <select id="sel-b" class="strat-select"></select>
+    </div>
+    <div id="agg-stats"></div>
+  </div>
+  <div id="body-wrap">
+    <div id="sidebar">
+      <h2>Markets</h2>
+      <div id="market-list"></div>
+    </div>
+    <div id="main">
+      <header>
+        <h1 id="question"></h1>
+        <div class="meta-row" id="meta-row"></div>
+      </header>
+      <div class="cards" id="cards"></div>
+      <div class="chart-grid">
+        <div class="chart-box"><h3>YES Price</h3><div class="chart-loading hidden" id="load-price">Loading&hellip;</div><canvas id="chart-price"></canvas></div>
+        <div class="chart-box"><h3>Cumulative Fee Revenue</h3><div class="chart-loading hidden" id="load-fees">Loading&hellip;</div><canvas id="chart-fees"></canvas></div>
+        <div class="chart-box"><h3>Net LP Value (Fees &minus; Deposit)</h3><div class="chart-loading hidden" id="load-pnl">Loading&hellip;</div><canvas id="chart-pnl"></canvas></div>
+        <div class="chart-box"><h3>Fee Rate (bps)</h3><div class="chart-loading hidden" id="load-feeRate">Loading&hellip;</div><canvas id="chart-feeRate"></canvas></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+/* ── helpers ──────────────────────────────────────────────── */
+function fmtUsd(v) {
+  const abs = Math.abs(v);
+  const sign = v < 0 ? '-' : '';
+  if (abs >= 1e6) return sign + '$' + (abs / 1e6).toFixed(1) + 'M';
+  if (abs >= 1e3) return sign + '$' + (abs / 1e3).toFixed(1) + 'K';
+  return sign + '$' + abs.toFixed(2);
+}
+function fmtPct(v) { return (v * 100).toFixed(1) + '%'; }
+function fmtPp(v) { return (v >= 0 ? '+' : '') + (v * 100).toFixed(1) + 'pp'; }
+function tsToDate(ts) { return new Date(ts * 1000).toISOString().slice(0, 10); }
+
+function downsample(arr, maxPts) {
+  if (arr.length <= maxPts) return arr;
+  const step = Math.ceil(arr.length / maxPts);
+  const out = [];
+  for (let i = 0; i < arr.length; i += step) out.push(arr[i]);
+  if (out[out.length - 1] !== arr[arr.length - 1]) out.push(arr[arr.length - 1]);
+  return out;
+}
+
+/* ── Chart.js defaults ───────────────────────────────────── */
+Chart.defaults.color = '#94a3b8';
+Chart.defaults.borderColor = '#1e293b';
+Chart.defaults.font.size = 11;
+
+const gridOpts = { color: 'rgba(71,85,105,.4)' };
+const baseTooltip = {
+  backgroundColor: '#1e293b', titleColor: '#e2e8f0', bodyColor: '#cbd5e1',
+  borderColor: '#475569', borderWidth: 1, padding: 10,
+  bodyFont: { family: 'monospace', size: 12 },
+};
+function makeXAxis() {
+  return {
+    type: 'linear', min: 0, max: 1,
+    grid: gridOpts, title: { display: true, text: 'Market lifetime %', color: '#64748b' },
+    ticks: { callback: v => (v * 100).toFixed(0) + '%' },
+  };
+}
+
+const COLOR_A = '#818cf8';
+const COLOR_B = '#f59e0b';
+const COLOR_A_FILL = 'rgba(129,140,248,.08)';
+
+/* ── state ───────────────────────────────────────────────── */
+let INDEX = null;               // parsed index.json
+let strategyCache = {};         // strategy name -> parsed strategy JSON
+let selectedMarketIdx = 0;
+let stratA = '';                // currently selected strategy A name
+let stratB = '';                // currently selected strategy B name
+let activeCharts = [];          // Chart instances to destroy on re-render
+
+/* ── fetch a strategy file, with caching ─────────────────── */
+async function ensureStrategy(name) {
+  if (strategyCache[name]) return strategyCache[name];
+  const filename = INDEX.strategy_files[name];
+  const resp = await fetch('results/' + filename);
+  if (!resp.ok) throw new Error('Failed to load ' + filename);
+  const data = await resp.json();
+  strategyCache[name] = data;
+  return data;
+}
+
+/* ── render aggregate stats bar ──────────────────────────── */
+function renderAggStats() {
+  const aggA = INDEX.aggregate[stratA];
+  const aggB = INDEX.aggregate[stratB];
+  const n = INDEX.markets.length;
+
+  let aWins = 0;
+  for (let i = 0; i < n; i++) {
+    if (aggA.per_market[i].return_on_liquidity > aggB.per_market[i].return_on_liquidity) aWins++;
+  }
+  const avgDelta = aggA.avg_return - aggB.avg_return;
+  const deltaClass = avgDelta >= 0 ? 'green' : 'red';
+
+  document.getElementById('agg-stats').innerHTML = [
+    `<span class="agg-item"><span class="agg-label">Markets:</span><span class="agg-value">${n}</span></span>`,
+    `<span class="agg-item"><span class="agg-label">A wins:</span><span class="agg-value">${aWins}/${n}</span></span>`,
+    `<span class="agg-item"><span class="agg-label">Avg A:</span><span class="agg-value color-a">${fmtPct(aggA.avg_return)}</span></span>`,
+    `<span class="agg-item"><span class="agg-label">Avg B:</span><span class="agg-value color-b">${fmtPct(aggB.avg_return)}</span></span>`,
+    `<span class="agg-item"><span class="agg-label">Avg \u0394:</span><span class="agg-value ${deltaClass}">${fmtPp(avgDelta)}</span></span>`,
+  ].join('');
+}
+
+/* ── render sidebar ──────────────────────────────────────── */
+function renderSidebar() {
+  const aggA = INDEX.aggregate[stratA];
+  const aggB = INDEX.aggregate[stratB];
+  const list = document.getElementById('market-list');
+
+  list.innerHTML = INDEX.markets.map((m, i) => {
+    const retA = aggA.per_market[i].return_on_liquidity;
+    const retB = aggB.per_market[i].return_on_liquidity;
+    const delta = retA - retB;
+    const cls = delta > 0 ? 'win' : delta < 0 ? 'loss' : 'tie';
+    const deltaClass = delta >= 0 ? 'green' : 'red';
+    return `<div class="market-item ${cls}${i === selectedMarketIdx ? ' selected' : ''}" data-idx="${i}">
+      <div class="mkt-q">${m.question}</div>
+      <div class="mkt-delta ${deltaClass}">${fmtPp(delta)}</div>
+      <div class="mkt-trades">${m.num_trades.toLocaleString()} trades &middot; ${m.outcome === 1 ? 'YES' : 'NO'}</div>
+    </div>`;
+  }).join('');
+
+  list.querySelectorAll('.market-item').forEach(el => {
+    el.addEventListener('click', () => {
+      const idx = parseInt(el.dataset.idx);
+      if (idx === selectedMarketIdx) return;
+      selectedMarketIdx = idx;
+      list.querySelectorAll('.market-item').forEach(e => e.classList.remove('selected'));
+      el.classList.add('selected');
+      renderDashboard();
+    });
+  });
+}
+
+/* ── show/hide chart loading overlays ────────────────────── */
+function setChartLoading(show) {
+  ['load-price', 'load-fees', 'load-pnl', 'load-feeRate'].forEach(id => {
+    document.getElementById(id).classList.toggle('hidden', !show);
+  });
+}
+
+/* ── render main dashboard for selected market ───────────── */
+async function renderDashboard() {
+  const mi = selectedMarketIdx;
+  const mkt = INDEX.markets[mi];
+  const liq = INDEX.config.initial_liquidity;
+
+  /* header */
+  document.getElementById('question').textContent = mkt.question || 'Simulation Results';
+  document.getElementById('meta-row').innerHTML = [
+    `<span>${mkt.num_trades.toLocaleString()} trades</span>`,
+    `<span>Liquidity: ${fmtUsd(liq)}</span>`,
+    `<span>Resolution: ${mkt.outcome === 1 ? 'YES' : 'NO'}</span>`,
+    `<span>${tsToDate(mkt.market_start)} &rarr; ${tsToDate(mkt.market_end)}</span>`,
+    `<span>Initial prob: ${(mkt.initial_prob * 100).toFixed(1)}%</span>`,
+  ].join('');
+
+  /* show loading if strategies not cached yet */
+  const needsA = !strategyCache[stratA];
+  const needsB = !strategyCache[stratB];
+  if (needsA || needsB) setChartLoading(true);
+
+  const [dataA, dataB] = await Promise.all([ensureStrategy(stratA), ensureStrategy(stratB)]);
+  setChartLoading(false);
+
+  const mktA = dataA.markets[mi];
+  const mktB = dataB.markets[mi];
+
+  /* cards */
+  const delta = mktA.summary.return_on_liquidity - mktB.summary.return_on_liquidity;
+  const deltaClass = delta >= 0 ? 'green' : 'red';
+  const skipA = mktA.summary.skip_rate != null ? mktA.summary.skip_rate : 0;
+  const skipB = mktB.summary.skip_rate != null ? mktB.summary.skip_rate : 0;
+  const execA = mktA.summary.num_trades_executed || mktA.trades.length;
+  const execB = mktB.summary.num_trades_executed || mktB.trades.length;
+  const feesA = mktA.trades.length > 0 ? mktA.trades[mktA.trades.length - 1].cumulative_fees : 0;
+  const feesB = mktB.trades.length > 0 ? mktB.trades[mktB.trades.length - 1].cumulative_fees : 0;
+  const cards = [
+    { label: stratA, value: fmtPct(mktA.summary.return_on_liquidity), cls: 'color-a', sub: 'Return on Liquidity' },
+    { label: stratB, value: fmtPct(mktB.summary.return_on_liquidity), cls: 'color-b', sub: 'Return on Liquidity' },
+    { label: 'Delta Return', value: fmtPp(delta), cls: deltaClass, sub: 'A vs B' },
+    { label: 'A Fees', value: fmtUsd(feesA), cls: 'color-a', sub: execA.toLocaleString() + ' trades (skip ' + fmtPct(skipA) + ')' },
+    { label: 'B Fees', value: fmtUsd(feesB), cls: 'color-b', sub: execB.toLocaleString() + ' trades (skip ' + fmtPct(skipB) + ')' },
+    { label: 'A Net', value: fmtUsd(feesA - liq), cls: feesA >= liq ? 'green' : 'red', sub: 'Fees \u2212 Deposit' },
+    { label: 'B Net', value: fmtUsd(feesB - liq), cls: feesB >= liq ? 'green' : 'red', sub: 'Fees \u2212 Deposit' },
+  ];
+  document.getElementById('cards').innerHTML = cards.map(c =>
+    `<div class="card"><div class="label">${c.label}</div><div class="value ${c.cls}">${c.value}</div><div class="sub">${c.sub}</div></div>`
+  ).join('');
+
+  /* destroy old charts */
+  activeCharts.forEach(c => c.destroy());
+  activeCharts = [];
+
+  /* downsample each strategy's trades independently, then align by normalized_time */
+  const tradesA = downsample(mktA.trades, 800);
+  const tradesB = downsample(mktB.trades, 800);
+
+  function xyFrom(arr, fn) { return arr.map(t => ({ x: t.normalized_time, y: fn(t) })); }
+
+  function tooltipTitle(items) {
+    const t = items[0].raw;
+    if (!t || t.x === undefined) return '';
+    return (t.x * 100).toFixed(1) + '% market lifetime';
+  }
+
+  /* Chart 1: YES Price — now diverges between strategies due to no-arb band */
+  activeCharts.push(new Chart(document.getElementById('chart-price'), {
+    type: 'line',
+    data: {
+      datasets: [
+        { label: stratA, data: xyFrom(tradesA, t => t.post_spot), borderColor: COLOR_A, pointRadius: 0, borderWidth: 1.5 },
+        { label: stratB, data: xyFrom(tradesB, t => t.post_spot), borderColor: COLOR_B, pointRadius: 0, borderWidth: 1.5 },
+      ],
+    },
+    options: {
+      responsive: true, interaction: { mode: 'nearest', intersect: false },
+      plugins: {
+        legend: { labels: { boxWidth: 12, padding: 12 } },
+        tooltip: { ...baseTooltip, callbacks: { title: tooltipTitle, label: ctx => ctx.dataset.label + ': ' + ctx.parsed.y.toFixed(4) } },
+      },
+      scales: { x: makeXAxis(), y: { grid: gridOpts, title: { display: true, text: 'YES Price', color: '#64748b' } } },
+    },
+  }));
+
+  /* Chart 2: Cumulative Fees */
+  activeCharts.push(new Chart(document.getElementById('chart-fees'), {
+    type: 'line',
+    data: {
+      datasets: [
+        { label: stratA, data: xyFrom(tradesA, t => t.cumulative_fees), borderColor: COLOR_A, pointRadius: 0, borderWidth: 1.5 },
+        { label: stratB, data: xyFrom(tradesB, t => t.cumulative_fees), borderColor: COLOR_B, pointRadius: 0, borderWidth: 1.5 },
+      ],
+    },
+    options: {
+      responsive: true, interaction: { mode: 'nearest', intersect: false },
+      plugins: {
+        legend: { labels: { boxWidth: 12, padding: 12 } },
+        tooltip: { ...baseTooltip, callbacks: { title: tooltipTitle, label: ctx => ctx.dataset.label + ': ' + fmtUsd(ctx.parsed.y) } },
+      },
+      scales: {
+        x: makeXAxis(),
+        y: { grid: gridOpts, title: { display: true, text: 'Cumulative Fees (USD)', color: '#64748b' },
+             ticks: { callback: v => fmtUsd(v) } },
+      },
+    },
+  }));
+
+  /* Chart 3: Net LP Value (Fees − Deposit) */
+  activeCharts.push(new Chart(document.getElementById('chart-pnl'), {
+    type: 'line',
+    data: {
+      datasets: [
+        { label: stratA, data: [{x:0, y:-liq}, ...xyFrom(tradesA, t => t.cumulative_fees - liq)], borderColor: COLOR_A, pointRadius: 0, borderWidth: 1.5 },
+        { label: stratB, data: [{x:0, y:-liq}, ...xyFrom(tradesB, t => t.cumulative_fees - liq)], borderColor: COLOR_B, pointRadius: 0, borderWidth: 1.5 },
+        { label: 'Breakeven', data: [{x:0,y:0},{x:1,y:0}], borderColor: 'rgba(248,113,113,.4)', borderWidth: 1, borderDash: [6, 4], pointRadius: 0 },
+      ],
+    },
+    options: {
+      responsive: true, interaction: { mode: 'nearest', intersect: false },
+      plugins: {
+        legend: { labels: { boxWidth: 12, padding: 12 } },
+        tooltip: { ...baseTooltip,
+          callbacks: { title: tooltipTitle, label: ctx => ctx.dataset.label === 'Breakeven' ? null : ctx.dataset.label + ': ' + fmtUsd(ctx.parsed.y) },
+          filter: item => item.dataset.label !== 'Breakeven' },
+      },
+      scales: {
+        x: makeXAxis(),
+        y: { grid: gridOpts, title: { display: true, text: 'Net LP Value (USD)', color: '#64748b' },
+             ticks: { callback: v => fmtUsd(v) } },
+      },
+    },
+  }));
+
+  /* Chart 4: Fee Rate */
+  activeCharts.push(new Chart(document.getElementById('chart-feeRate'), {
+    type: 'line',
+    data: {
+      datasets: [
+        { label: stratA, data: xyFrom(tradesA, t => t.fee_rate * 10000), borderColor: COLOR_A, pointRadius: 0, borderWidth: 1.5 },
+        { label: stratB, data: xyFrom(tradesB, t => t.fee_rate * 10000), borderColor: COLOR_B, pointRadius: 0, borderWidth: 1.5 },
+      ],
+    },
+    options: {
+      responsive: true, interaction: { mode: 'nearest', intersect: false },
+      plugins: {
+        legend: { labels: { boxWidth: 12, padding: 12 } },
+        tooltip: { ...baseTooltip, callbacks: { title: tooltipTitle, label: ctx => ctx.dataset.label + ': ' + ctx.parsed.y.toFixed(1) + ' bps' } },
+      },
+      scales: {
+        x: makeXAxis(),
+        y: { grid: gridOpts, title: { display: true, text: 'Fee Rate (bps)', color: '#64748b' },
+             ticks: { callback: v => v.toFixed(0) + ' bps' } },
+      },
+    },
+  }));
+}
+
+/* ── full re-render (called when dropdowns change) ───────── */
+async function onStrategyChange() {
+  renderAggStats();
+  renderSidebar();
+  await renderDashboard();
+}
+
+/* ── boot ─────────────────────────────────────────────────── */
+async function boot() {
+  try {
+    const resp = await fetch('results/index.json');
+    if (!resp.ok) throw new Error(resp.status + ' ' + resp.statusText);
+    INDEX = await resp.json();
+  } catch (err) {
+    document.getElementById('loading').textContent =
+      'Failed to load results/index.json\n\nServe this directory with:\n  python -m pmamm_sim.cli serve --results-dir results/\nor:\n  python -m http.server 8080\n\n' + err.message;
+    return;
+  }
+
+  const strats = INDEX.strategies;
+  if (!strats || strats.length === 0) {
+    document.getElementById('loading').textContent = 'No strategies found in index.json';
+    return;
+  }
+
+  /* populate dropdowns */
+  const selA = document.getElementById('sel-a');
+  const selB = document.getElementById('sel-b');
+  strats.forEach((s, i) => {
+    selA.add(new Option(s, s));
+    selB.add(new Option(s, s));
+  });
+  selA.value = strats[0];
+  selB.value = strats.length > 1 ? strats[1] : strats[0];
+  stratA = selA.value;
+  stratB = selB.value;
+
+  selA.addEventListener('change', () => { stratA = selA.value; onStrategyChange(); });
+  selB.addEventListener('change', () => { stratB = selB.value; onStrategyChange(); });
+
+  /* initial render */
+  renderAggStats();
+  renderSidebar();
+
+  document.getElementById('loading').classList.add('hidden');
+  document.getElementById('app').classList.add('visible');
+
+  await renderDashboard();
+}
+
+boot();
+</script>
+</body>
+</html>
