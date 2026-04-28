@@ -39,7 +39,7 @@ flowchart LR
 
 | Stage | Input | Output |
 |--------|--------|--------|
-| `fetch_trades.py` | Event URL or slug (`--market`, `--condition-id` optional) | `trades_<...>.json` in the working directory |
+| `fetch_trades.py` | Event URL or slug (`--market`, `--condition-id`, `--output-dir` optional) | `data/trades_<...>.json` by default |
 | `python -m pmamm_sim …` | That JSON (or any compatible file) | Console summary; optional `--export` JSON |
 | `batch` | Folder with `manifest.json` + per-market JSON files | Results under `--results-dir` |
 | `serve` | Prior results + `visualizer.html` | Local HTTP UI |
@@ -74,8 +74,10 @@ The **simulator never calls Dome**; only `fetch_trades.py` needs a `DOME_API_KEY
 | `pmamm_sim/data_loader.py` | JSON → `MarketTrade` list + metadata |
 | `pmamm_sim/cli.py` | `pmamm_sim`, `batch`, `serve` entrypoints |
 | `pmamm_sim/batch.py` | Manifest-driven multi-market sweeps |
-| `data/` | Example markets + `manifest.json` for batch demos |
+| `data/` | Default market **`trades_*.json`** files plus `manifest.json` for batch |
 | `visualizer.html` | Served by `pmamm_sim serve` for browsing results |
+
+Keep market JSONs directly under **`data/`**, not the repo root. Freshly fetched dumps land in **`data/`** by default. Add any market you want included in batch runs to **`data/manifest.json`**. Run sims with `python -m pmamm_sim data/trades_<name>.json --outcome …`. Outcomes in the manifest must stay aligned with how each market resolved.
 
 ---
 
@@ -107,32 +109,44 @@ Running **`python -m pmamm_sim`** only needs JSON files on disk — **no** `DOME
 
 ```bash
 python fetch_trades.py "https://polymarket.com/event/<slug>"
-# Optional: python fetch_trades.py <slug> [--market <substring>] [--condition-id <0x…>]
+# Optional: python fetch_trades.py <slug> [--market <substring>] [--condition-id <0x…>] [-o DIR]
 ```
 
-Writes `trades_<...>.json` in the current directory. Each entry includes fields such as `timestamp`, `yes_price`, `usd_size`, and `tx_hash` (see `data/*.json` for examples).
+Writes `data/trades_<...>.json` by default so the repo root stays clean and new market files follow the same convention as the committed dataset. Override with `--output-dir` / `-o` if you want to write somewhere else. Add new datasets to `data/manifest.json` when you want them included in batch/visualizer runs.
+
+Each trade row includes fields such as `timestamp`, `yes_price`, `usd_size`, and `tx_hash`.
 
 ### Single-market simulation
 
 ```bash
-python -m pmamm_sim trades_<name>.json --outcome 0|1 [options]
+python -m pmamm_sim data/trades_<name>.json --outcome 0|1 [options]
+```
+
+Example (Khamenei market, outcome per `data/manifest.json`):
+
+```bash
+python -m pmamm_sim data/trades_khamenei-out-as-supreme-leader-of-iran-by-january-31.json --outcome 0
 ```
 
 `--outcome` is **0** if NO wins, **1** if YES wins. Use `--help` for liquidity, strategy, export, and time-window flags.
 
-### Batch (many markets)
+### Batch + visualizer (intended workflow)
 
-Point at a directory containing `manifest.json` and the trade files it references (see `data/manifest.json`):
-
-```bash
-python -m pmamm_sim batch path/to/data --results-dir ./results
-```
-
-### Local visualizer
+The normal way to use this repo is to run a **full batch sweep** over every market in `data/manifest.json`, then open the local visualizer. By default, batch runs every strategy in `STRATEGY_REGISTRY`.
 
 ```bash
-python -m pmamm_sim serve [--port 8080]
+rm -rf results
+python -m pmamm_sim batch ./data --results-dir ./results
+python -m pmamm_sim serve --port 8080
 ```
+
+Then open:
+
+```text
+http://localhost:8080/visualizer.html
+```
+
+Use `--strategies "FixedFee(100bps)"` only when you intentionally want a faster filtered run for debugging. If you use it, the visualizer will only show that filtered set until you regenerate `results/` without the flag.
 
 ---
 

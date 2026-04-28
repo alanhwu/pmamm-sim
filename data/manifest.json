@@ -1,77 +1,77 @@
 {
   "markets": [
     {
-      "file": "khamenei-jan.json",
+      "file": "trades_khamenei-out-as-supreme-leader-of-iran-by-january-31.json",
       "outcome": 0,
       "question": "Khamenei out as Supreme Leader of Iran by January 31?",
       "trades": 152832,
       "volume_usd": 49748804
     },
     {
-      "file": "fed-rate-jan.json",
+      "file": "trades_no-change-in-fed-interest-rates-after-january-2026-meeting.json",
       "outcome": 1,
       "question": "No change in Fed interest rates after January 2026 meeting?",
       "trades": 273424,
       "volume_usd": 106767096
     },
     {
-      "file": "fed-rate-dec-25bps.json",
+      "file": "trades_fed-decreases-interest-rates-by-25-bps-after-december-2025-meeting.json",
       "outcome": 1,
       "question": "Fed decreases interest rates by 25 bps after December 2025 meeting?",
       "trades": 170720,
       "volume_usd": 54634507
     },
     {
-      "file": "biden-term.json",
+      "file": "trades_will-biden-finish-his-term.json",
       "outcome": 1,
       "question": "Will Biden finish his term?",
       "trades": 153973,
       "volume_usd": 64552171
     },
     {
-      "file": "hezbollah-ceasefire.json",
+      "file": "trades_israel-x-hezbollah-ceasefire-in-2024.json",
       "outcome": 1,
       "question": "Israel x Hezbollah Ceasefire in 2024?",
       "trades": 95959,
       "volume_usd": 40061278
     },
     {
-      "file": "texans-patriots.json",
+      "file": "trades_texans-vs.-patriots.json",
       "outcome": 0,
       "question": "Texans vs. Patriots (Texans=YES side)",
       "trades": 39905,
       "volume_usd": 10271203
     },
     {
-      "file": "geng-kt-lol.json",
+      "file": "trades_lol:-gen.g-vs-kt-rolster-(bo5).json",
       "outcome": 0,
       "question": "LoL: Gen.G vs KT Rolster BO5 (Gen.G=YES side)",
       "trades": 30324,
       "volume_usd": 11455566
     },
     {
-      "file": "silver-110-jan.json",
+      "file": "trades_will-silver-(si)-hit-(high)-$110-by-end-of-january.json",
       "outcome": 1,
       "question": "Will Silver (SI) hit $110 by end of January?",
       "trades": 19420,
       "volume_usd": 4566514
     },
     {
-      "file": "bills-jaguars.json",
+      "file": "trades_bills-vs.-jaguars.json",
       "outcome": 1,
       "question": "Bills vs. Jaguars (Bills=YES side)",
       "trades": 30652,
       "volume_usd": 10668681
     },
     {
-      "file": "rams-bears.json",
+      "file": "trades_rams-vs.-bears.json",
       "outcome": 1,
       "question": "Rams vs. Bears (Rams=YES side)",
       "trades": 45344,
       "volume_usd": 12527242
     },
     {
-      "file": "rennes-le-havre.json",
+      "file": "trades_will-stade-rennais-fc-1901-win-on-2026-01-18.json",
       "outcome": 0,
       "question": "Will Stade Rennais FC 1901 win on 2026-01-18?",
       "trades": 6931,

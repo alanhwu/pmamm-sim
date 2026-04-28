@@ -9,7 +9,9 @@ with cursor-based pagination (no offset cap).
 Requires ``DOME_API_KEY`` (environment variable or entry in a root ``.env`` file).
 
 Usage:
-    python fetch_trades.py <event_url_or_slug>
+    python fetch_trades.py <event_url_or_slug> [--output-dir DIR]
+
+Writes ``trades_<...>.json`` under ``data/`` by default (override with ``--output-dir``).
 
 Example:
     python fetch_trades.py https://polymarket.com/event/khamenei-out-as-supreme-leader-of-iran-by-january-31
@@ -36,6 +38,9 @@ GAMMA_API = "https://gamma-api.polymarket.com"
 DOME_API = "https://api.domeapi.io/v1"
 
 TRADE_PAGE_LIMIT = 1000  # Dome API max per request
+
+# Default dump directory (keeps repo root clean and matches data/manifest.json convention)
+DEFAULT_FETCH_OUT = _REPO_ROOT / "data"
 
 
 def require_dome_api_key() -> str:
@@ -370,7 +375,7 @@ def print_price_path(trades: list[dict]) -> None:
 
 
 # ── Main ─────────────────────────────────────────────────────────────────────
-def resolve_market(args: list[str]) -> tuple[dict, str]:
+def resolve_market(args: list[str]) -> tuple[dict, str, Path]:
     """
     Resolve the target market from CLI arguments.
 
@@ -390,6 +395,13 @@ def resolve_market(args: list[str]) -> tuple[dict, str]:
     parser.add_argument(
         "--condition-id", "-c", help="Use a conditionId directly (skip Gamma lookup)"
     )
+    parser.add_argument(
+        "--output-dir",
+        "-o",
+        type=Path,
+        default=DEFAULT_FETCH_OUT,
+        help="Directory for trades_<...>.json (default: data/ next to fetch_trades.py)",
+    )
     opts = parser.parse_args(args)
 
     if opts.condition_id:
@@ -408,7 +420,8 @@ def resolve_market(args: list[str]) -> tuple[dict, str]:
             "active": "N/A",
         }
         slug = cid[:16]
-        return market, slug
+        out_dir = opts.output_dir.expanduser().resolve()
+        return market, slug, out_dir
 
     if not opts.event:
         parser.print_help()
@@ -438,11 +451,12 @@ def resolve_market(args: list[str]) -> tuple[dict, str]:
     else:
         market = pick_market(event_data, slug)
 
-    return market, slug
+    out_dir = opts.output_dir.expanduser().resolve()
+    return market, slug, out_dir
 
 
 def main() -> None:
-    market, slug = resolve_market(sys.argv[1:])
+    market, slug, out_dir = resolve_market(sys.argv[1:])
     api_key = require_dome_api_key()
     condition_id = market["conditionId"]
     print_market_metadata(market)
@@ -480,6 +494,7 @@ def main() -> None:
     print_price_path(trades)
 
     # Write the full normalised dataset to JSON for downstream use
+    out_dir.mkdir(parents=True, exist_ok=True)
     # Use a filesystem-safe name derived from the market question or slug
     safe_name = (
         market.get("question", slug)
@@ -489,7 +504,7 @@ def main() -> None:
         .replace("/", "-")
         .strip("-")[:80]
     )
-    out_path = f"trades_{safe_name}.json"
+    out_path = out_dir / f"trades_{safe_name}.json"
     with open(out_path, "w") as f:
         json.dump(trades, f, indent=2)
     print(f"[done] Full normalised trade list written to {out_path} ({len(trades):,} rows)")
