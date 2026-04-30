@@ -41,12 +41,27 @@ def load_submission(filepath: Path) -> dict:
     except Exception as e:
         raise SubmissionError(filename, f"Import failed: {e}") from e
 
-    # Find the Strategy class
+    # Find the Strategy class — try explicit name first, then auto-detect
     strategy_cls = getattr(module, "Strategy", None)
+    if strategy_cls is not None and not isinstance(strategy_cls, type):
+        strategy_cls = None
+
     if strategy_cls is None:
-        raise SubmissionError(filename, "No class named 'Strategy' found")
-    if not isinstance(strategy_cls, type):
-        raise SubmissionError(filename, "'Strategy' is not a class")
+        # Fallback: find any class with both before_swap and after_swap
+        import inspect
+        for _name, obj in inspect.getmembers(module, inspect.isclass):
+            if obj.__module__ != module_name:
+                continue  # skip imported classes (e.g. FeeQuote)
+            if hasattr(obj, "before_swap") and hasattr(obj, "after_swap"):
+                strategy_cls = obj
+                break
+
+    if strategy_cls is None:
+        raise SubmissionError(
+            filename,
+            "No strategy class found. Define a class named 'Strategy' "
+            "or any class with before_swap() and after_swap() methods."
+        )
 
     # Instantiate with no args
     try:
