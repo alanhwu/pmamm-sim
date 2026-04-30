@@ -30,11 +30,42 @@ def main():
     elif len(sys.argv) > 1 and sys.argv[1] == "serve":
         parser = argparse.ArgumentParser(
             prog="pmamm_sim serve",
-            description="Serve the visualizer and results via a local HTTP server",
+            description="Serve the visualizer, competition UI, and API",
         )
         parser.add_argument("--port", type=int, default=8080, help="Port to serve on (default: 8080)")
+        parser.add_argument("--data-folder", type=str, default="data",
+                            help="Path to folder with manifest.json and trade files (default: data)")
+        parser.add_argument("--results-dir", type=str, default="results",
+                            help="Output directory for results (default: results)")
+        parser.add_argument("--submissions-dir", type=str, default="submissions",
+                            help="Directory for strategy submissions (default: submissions)")
+        parser.add_argument("--liquidity", type=float, default=10000,
+                            help="Initial LP deposit in USDC per market (default: 10000)")
+        parser.add_argument("--include-builtins", action="store_true",
+                            help="Include built-in strategies in competition runs")
         args = parser.parse_args(sys.argv[2:])
         _run_serve(args)
+    elif len(sys.argv) > 1 and sys.argv[1] == "compete":
+        parser = argparse.ArgumentParser(
+            prog="pmamm_sim compete",
+            description="Run a strategy competition from submission files",
+        )
+        parser.add_argument("submissions_dir",
+                            help="Directory containing strategy .py files")
+        parser.add_argument("--data-folder", type=str, default="data",
+                            help="Path to folder with manifest.json and trade files (default: data)")
+        parser.add_argument("--results-dir", type=str, default="results",
+                            help="Output directory for results (default: results)")
+        parser.add_argument("--liquidity", type=float, default=10000,
+                            help="Initial LP deposit in USDC per market (default: 10000)")
+        parser.add_argument("--include-builtins", action="store_true",
+                            help="Include built-in strategies from STRATEGY_REGISTRY")
+        parser.add_argument("--strategies", type=str, default=None,
+                            help="Comma-separated strategy names to run (default: all)")
+        parser.add_argument("--fail-fast", action="store_true",
+                            help="Stop on first submission load error")
+        args = parser.parse_args(sys.argv[2:])
+        _run_compete(args)
     else:
         parser = argparse.ArgumentParser(description="Replay Polymarket trades through a simulated AMM")
         _add_single_args(parser)
@@ -194,15 +225,22 @@ def _run_batch(args):
 
 def _run_serve(args):
     import http.server
-    import functools
+    from pmamm_sim.server import CompetitionHandler
 
     # Serve from project root so both visualizer.html and results/ are accessible
     root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-    handler = functools.partial(http.server.SimpleHTTPRequestHandler, directory=root)
 
-    with http.server.HTTPServer(("", args.port), handler) as httpd:
+    CompetitionHandler.serve_root = root
+    CompetitionHandler.data_folder = args.data_folder
+    CompetitionHandler.results_dir = args.results_dir
+    CompetitionHandler.submissions_dir = args.submissions_dir
+    CompetitionHandler.liquidity = args.liquidity
+    CompetitionHandler.include_builtins = args.include_builtins
+
+    with http.server.ThreadingHTTPServer(("", args.port), CompetitionHandler) as httpd:
         print(f"Serving at http://localhost:{args.port}")
-        print(f"Open http://localhost:{args.port}/visualizer.html")
+        print(f"  Visualizer:  http://localhost:{args.port}/visualizer.html")
+        print(f"  Competition: http://localhost:{args.port}/compete.html")
         print("Press Ctrl+C to stop")
         try:
             httpd.serve_forever()
@@ -219,6 +257,88 @@ def _print_result(r):
     print(f"  Return on liq:     {r.return_on_liquidity:+.4%}")
     print(f"  Trades executed:   {r.num_trades:,} / {total_signals:,} ({1.0 - r.skip_rate:.1%})")
     print(f"  Trades skipped:    {r.num_trades_skipped:,} ({r.skip_rate:.1%}) — inside no-arb band")
+
+
+def _run_compete(args):
+    from pathlib import Path
+    from pmamm_sim.batch import run_full_sweep
+    from pmamm_sim.loader import load_submissions
+
+    submissions_dir = Path(args.submissions_dir)
+
+    print("\n" + "=" * 60)
+    print("  WARNING: Strategy files contain arbitrary Python code.")
+    print("  Only run submissions you trust.")
+    print("=" * 60)
+
+    print(f"\nLoading submissions from {submissions_dir}/")
+    strategies, errors = load_submissions(
+        submissions_dir, fail_fast=args.fail_fast,
+    )
+
+    for err in errors:
+        print(f"  SKIP  {err.filename}: {err.reason}")
+    for entry in strategies:
+        author = entry.get("author", "anonymous")
+        print(f"  OK    {entry['name']} (by {author})")
+
+    if not strategies and not args.include_builtins:
+        print("\nNo valid submissions found. Nothing to run.")
+        return
+
+    strategy_filter = None
+    if args.strategies:
+        strategy_filter = set(s.strip() for s in args.strategies.split(","))
+
+    run_full_sweep(
+        data_folder=args.data_folder,
+        results_dir=args.results_dir,
+        liquidity=args.liquidity,
+        strategy_filter=strategy_filter,
+        extra_strategies=strategies if strategies else None,
+        include_builtins=args.include_builtins,
+    )
+
+    _print_leaderboard(args.results_dir)
+
+
+def _print_leaderboard(results_dir: str):
+    import json
+    from pathlib import Path
+
+    index_path = Path(results_dir) / "index.json"
+    if not index_path.exists():
+        return
+
+    with open(index_path) as f:
+        index = json.load(f)
+
+    agg = index.get("aggregate", {})
+    if not agg:
+        return
+
+    ranked = sorted(agg.items(), key=lambda kv: kv[1]["avg_return"], reverse=True)
+
+    n_markets = len(index.get("markets", []))
+    print(f"\n{'=' * 72}")
+    print(f"  LEADERBOARD  ({n_markets} markets, ${index['config']['initial_liquidity']:,.0f} liquidity)")
+    print(f"{'=' * 72}")
+    print(f"  {'Rank':<6} {'Strategy':<30} {'Avg Return':>12} {'Total Fees':>12} {'Skip':>7}")
+    print(f"  {'----':<6} {'--------':<30} {'----------':>12} {'----------':>12} {'----':>7}")
+
+    for i, (name, stats) in enumerate(ranked, 1):
+        avg_ret = stats["avg_return"]
+        total_fees = stats["total_fees"]
+        skip_rate = stats["avg_skip_rate"]
+        medal = {1: "1st", 2: "2nd", 3: "3rd"}.get(i, f"{i}th")
+        print(
+            f"  {medal:<6} {name:<30} {avg_ret:>+11.2%} "
+            f"${total_fees:>10,.0f} {skip_rate:>6.1%}"
+        )
+
+    print(f"{'=' * 72}")
+    print(f"  Results: {results_dir}/  |  Visualizer: python -m pmamm_sim serve")
+    print()
 
 
 if __name__ == "__main__":

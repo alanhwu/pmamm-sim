@@ -1,0 +1,438 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>pmamm-sim Competition</title>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    background: #0f172a; color: #e2e8f0; min-height: 100vh;
+    display: flex; flex-direction: column;
+  }
+
+  /* ── top bar ───────────────────────────────────────────── */
+  #top-bar {
+    display: flex; align-items: center; gap: 16px;
+    padding: 12px 24px; background: #1e293b; border-bottom: 1px solid #334155;
+    font-size: 13px; flex-shrink: 0;
+  }
+  #top-bar h1 { font-size: 16px; font-weight: 600; color: #f1f5f9; }
+  #top-bar .nav-links { margin-left: auto; display: flex; gap: 16px; }
+  #top-bar .nav-links a {
+    color: #818cf8; text-decoration: none; font-size: 13px;
+  }
+  #top-bar .nav-links a:hover { color: #a5b4fc; text-decoration: underline; }
+
+  /* ── main layout ───────────────────────────────────────── */
+  #main { display: flex; flex: 1; min-height: 0; }
+
+  /* ── left: editor panel ────────────────────────────────── */
+  #editor-panel {
+    width: 460px; flex-shrink: 0; display: flex; flex-direction: column;
+    border-right: 1px solid #334155; background: #0d1526;
+  }
+  #editor-panel h2 {
+    font-size: 11px; text-transform: uppercase; letter-spacing: .5px;
+    color: #475569; padding: 14px 16px 0; font-weight: 600;
+  }
+
+  .form-group { padding: 8px 16px; }
+  .form-group label {
+    display: block; font-size: 11px; color: #64748b;
+    text-transform: uppercase; letter-spacing: .5px; margin-bottom: 4px;
+  }
+  .form-input {
+    width: 100%; background: #1e293b; color: #e2e8f0;
+    border: 1px solid #334155; border-radius: 6px;
+    padding: 7px 10px; font-size: 13px; font-family: inherit;
+    outline: none;
+  }
+  .form-input:focus { border-color: #6366f1; }
+  .form-row { display: flex; gap: 8px; }
+  .form-row .form-group { flex: 1; }
+
+  #code-editor {
+    flex: 1; width: 100%; resize: none;
+    background: #0f172a; color: #e2e8f0;
+    border: 1px solid #334155; border-radius: 6px;
+    padding: 12px; font-size: 13px; line-height: 1.5;
+    font-family: 'SF Mono', 'Fira Code', 'Cascadia Code', Menlo, Consolas, monospace;
+    tab-size: 4; outline: none;
+  }
+  #code-editor:focus { border-color: #6366f1; }
+  .editor-wrap { flex: 1; display: flex; flex-direction: column; padding: 8px 16px 12px; min-height: 0; }
+  .editor-wrap label { margin-bottom: 4px; }
+
+  /* ── submit bar ────────────────────────────────────────── */
+  .submit-bar {
+    padding: 12px 16px; border-top: 1px solid #1e293b;
+    display: flex; align-items: center; gap: 12px;
+  }
+  #btn-submit {
+    background: #6366f1; color: #fff; border: none; border-radius: 6px;
+    padding: 8px 20px; font-size: 13px; font-weight: 600; cursor: pointer;
+    font-family: inherit; white-space: nowrap;
+  }
+  #btn-submit:hover { background: #4f46e5; }
+  #btn-submit:disabled { background: #334155; color: #64748b; cursor: not-allowed; }
+  #status {
+    font-size: 12px; color: #94a3b8; flex: 1;
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  }
+  #status.error { color: #f87171; }
+  #status.success { color: #4ade80; }
+
+  /* ── spinner ───────────────────────────────────────────── */
+  .spinner {
+    display: inline-block; width: 14px; height: 14px;
+    border: 2px solid #475569; border-top-color: #818cf8;
+    border-radius: 50%; animation: spin .6s linear infinite;
+    vertical-align: middle; margin-right: 6px;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  /* ── right: leaderboard panel ──────────────────────────── */
+  #leaderboard-panel {
+    flex: 1; min-width: 0; overflow-y: auto; padding: 20px 24px;
+    scrollbar-width: thin; scrollbar-color: transparent transparent;
+  }
+  #leaderboard-panel:hover { scrollbar-color: #334155 transparent; }
+  #leaderboard-panel::-webkit-scrollbar { width: 6px; }
+  #leaderboard-panel::-webkit-scrollbar-track { background: transparent; }
+  #leaderboard-panel::-webkit-scrollbar-thumb { background: transparent; border-radius: 3px; }
+  #leaderboard-panel:hover::-webkit-scrollbar-thumb { background: #334155; }
+
+  #leaderboard-panel h2 {
+    font-size: 14px; font-weight: 600; color: #f1f5f9; margin-bottom: 4px;
+  }
+  .lb-subtitle { font-size: 12px; color: #64748b; margin-bottom: 16px; }
+
+  /* ── leaderboard table ─────────────────────────────────── */
+  .lb-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  .lb-table th {
+    text-align: left; font-size: 10px; text-transform: uppercase;
+    letter-spacing: .5px; color: #475569; font-weight: 600;
+    padding: 6px 12px; border-bottom: 1px solid #334155;
+  }
+  .lb-table th.num { text-align: right; }
+  .lb-table td { padding: 10px 12px; border-bottom: 1px solid #1e293b; }
+  .lb-table td.num { text-align: right; font-variant-numeric: tabular-nums; }
+  .lb-table tr:hover td { background: rgba(30,41,59,.5); }
+  .lb-table tr.highlight td { background: rgba(99,102,241,.12); }
+
+  .rank-cell { font-weight: 700; width: 50px; }
+  .rank-1 { color: #fbbf24; }
+  .rank-2 { color: #d1d5db; }
+  .rank-3 { color: #d97706; }
+
+  .green { color: #4ade80; }
+  .red { color: #f87171; }
+  .strat-name { font-weight: 600; color: #e2e8f0; }
+
+  .lb-empty {
+    text-align: center; padding: 48px 20px; color: #475569; font-size: 14px;
+  }
+
+  /* ── per-market expandable ─────────────────────────────── */
+  .market-detail { display: none; }
+  .market-detail.visible { display: table-row; }
+  .market-detail td { padding: 0 12px 12px 50px; border-bottom: 1px solid #1e293b; }
+  .market-grid {
+    display: grid; grid-template-columns: 1fr auto auto auto;
+    gap: 2px 16px; font-size: 12px; color: #94a3b8;
+  }
+  .market-grid .mkt-name {
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    max-width: 340px;
+  }
+  .expand-btn {
+    background: none; border: none; color: #64748b; cursor: pointer;
+    font-size: 11px; padding: 2px 6px; border-radius: 3px;
+  }
+  .expand-btn:hover { background: #1e293b; color: #94a3b8; }
+
+  /* ── responsive ────────────────────────────────────────── */
+  @media (max-width: 900px) {
+    #main { flex-direction: column; }
+    #editor-panel { width: 100%; max-height: 50vh; border-right: none; border-bottom: 1px solid #334155; }
+  }
+</style>
+</head>
+<body>
+
+<div id="top-bar">
+  <h1>pmamm-sim Competition</h1>
+  <div class="nav-links">
+    <a href="/visualizer.html">Visualizer</a>
+  </div>
+</div>
+
+<div id="main">
+  <!-- LEFT: code editor -->
+  <div id="editor-panel">
+    <h2>Submit Strategy</h2>
+    <div class="form-row">
+      <div class="form-group">
+        <label for="strat-name">Strategy Name</label>
+        <input id="strat-name" class="form-input" type="text" placeholder="MyAwesomeStrategy">
+      </div>
+      <div class="form-group">
+        <label for="strat-author">Author</label>
+        <input id="strat-author" class="form-input" type="text" placeholder="Your Name">
+      </div>
+    </div>
+    <div class="form-group">
+      <label for="strat-desc">Description (optional)</label>
+      <input id="strat-desc" class="form-input" type="text" placeholder="One-line description of your strategy">
+    </div>
+    <div class="editor-wrap">
+      <label for="code-editor" style="font-size:11px;color:#64748b;text-transform:uppercase;letter-spacing:.5px;">Strategy Code</label>
+      <textarea id="code-editor" spellcheck="false"></textarea>
+    </div>
+    <div class="submit-bar">
+      <button id="btn-submit">Submit & Run</button>
+      <span id="status"></span>
+    </div>
+  </div>
+
+  <!-- RIGHT: leaderboard -->
+  <div id="leaderboard-panel">
+    <h2>Leaderboard</h2>
+    <div class="lb-subtitle" id="lb-subtitle">Loading...</div>
+    <div id="lb-content"></div>
+  </div>
+</div>
+
+<script>
+/* ── helpers ──────────────────────────────────────────────── */
+function fmtUsd(v) {
+  const abs = Math.abs(v);
+  const sign = v < 0 ? '-' : '';
+  if (abs >= 1e6) return sign + '$' + (abs / 1e6).toFixed(1) + 'M';
+  if (abs >= 1e3) return sign + '$' + (abs / 1e3).toFixed(1) + 'K';
+  return sign + '$' + abs.toFixed(2);
+}
+function fmtPct(v) { return (v >= 0 ? '+' : '') + (v * 100).toFixed(2) + '%'; }
+
+const DEFAULT_CODE = `class Strategy:
+    """Your fee strategy. Instantiated fresh for each market."""
+
+    def __init__(self):
+        # Initialize any state you need here.
+        # This is called once per market, with no arguments.
+        self.base_fee = 100 / 10_000  # 100 bps = 1%
+
+    def before_swap(self, pending):
+        """Return FeeQuote(bid_fee, ask_fee) for this trade.
+
+        pending fields:
+          .side             "buy_yes" or "sell_yes"
+          .fair_price       external fair value signal (0-1)
+          .current_spot     AMM spot price before trade
+          .reserve_x        YES reserves
+          .reserve_y        USDC reserves
+          .timestamp         unix timestamp
+          .time_to_resolution  seconds until resolution
+          .normalized_time   0.0 (open) to 1.0 (resolution)
+        """
+        return FeeQuote(bid_fee=self.base_fee, ask_fee=self.base_fee)
+
+    def after_swap(self, trade):
+        """Update state after trade executes. trade is None if skipped."""
+        pass
+`;
+
+/* ── state ───────────────────────────────────────────────── */
+let lastHighlight = null;  // name of last submitted strategy
+
+/* ── tab key support in textarea ─────────────────────────── */
+const editor = document.getElementById('code-editor');
+editor.value = DEFAULT_CODE;
+
+editor.addEventListener('keydown', function(e) {
+  if (e.key === 'Tab') {
+    e.preventDefault();
+    const start = this.selectionStart;
+    const end = this.selectionEnd;
+    this.value = this.value.substring(0, start) + '    ' + this.value.substring(end);
+    this.selectionStart = this.selectionEnd = start + 4;
+  }
+});
+
+/* ── leaderboard rendering ───────────────────────────────── */
+function renderLeaderboard(data) {
+  const { strategies, markets, config } = data;
+  const subtitle = document.getElementById('lb-subtitle');
+  const content = document.getElementById('lb-content');
+
+  if (!strategies || strategies.length === 0) {
+    subtitle.textContent = 'No results yet. Submit a strategy to get started.';
+    content.innerHTML = '';
+    return;
+  }
+
+  const nMarkets = markets ? markets.length : 0;
+  const liq = config?.initial_liquidity || 10000;
+  subtitle.textContent = `${nMarkets} markets | $${liq.toLocaleString()} liquidity per market`;
+
+  let html = '<table class="lb-table"><thead><tr>';
+  html += '<th>Rank</th><th>Strategy</th>';
+  html += '<th class="num">Avg Return</th>';
+  html += '<th class="num">Total Fees</th>';
+  html += '<th class="num">Skip Rate</th>';
+  html += '<th></th>';
+  html += '</tr></thead><tbody>';
+
+  strategies.forEach((s, idx) => {
+    const isHighlight = lastHighlight && s.name === lastHighlight;
+    const rankClass = s.rank <= 3 ? ` rank-${s.rank}` : '';
+    const retClass = s.avg_return >= 0 ? 'green' : 'red';
+    const rowClass = isHighlight ? ' class="highlight"' : '';
+
+    html += `<tr${rowClass} data-idx="${idx}">`;
+    html += `<td class="rank-cell${rankClass}">${s.rank}</td>`;
+    html += `<td class="strat-name">${esc(s.name)}</td>`;
+    html += `<td class="num ${retClass}">${fmtPct(s.avg_return)}</td>`;
+    html += `<td class="num">${fmtUsd(s.total_fees)}</td>`;
+    html += `<td class="num">${(s.avg_skip_rate * 100).toFixed(1)}%</td>`;
+    html += `<td><button class="expand-btn" data-idx="${idx}">details</button></td>`;
+    html += '</tr>';
+
+    // Per-market detail row (hidden by default)
+    if (s.per_market && markets) {
+      html += `<tr class="market-detail" id="detail-${idx}"><td colspan="6">`;
+      html += '<div class="market-grid">';
+      html += '<div style="font-weight:600;color:#64748b">Market</div>';
+      html += '<div style="font-weight:600;color:#64748b;text-align:right">Return</div>';
+      html += '<div style="font-weight:600;color:#64748b;text-align:right">Fees</div>';
+      html += '<div style="font-weight:600;color:#64748b;text-align:right">Skip</div>';
+      s.per_market.forEach((m, mi) => {
+        const mRetClass = m.return_on_liquidity >= 0 ? 'green' : 'red';
+        const q = m.question || (markets[mi] ? markets[mi].question : `Market ${mi}`);
+        html += `<div class="mkt-name" title="${esc(q)}">${esc(q)}</div>`;
+        html += `<div style="text-align:right" class="${mRetClass}">${fmtPct(m.return_on_liquidity)}</div>`;
+        html += `<div style="text-align:right">${fmtUsd(m.fee_revenue)}</div>`;
+        html += `<div style="text-align:right">${(m.skip_rate * 100).toFixed(1)}%</div>`;
+      });
+      html += '</div></td></tr>';
+    }
+  });
+
+  html += '</tbody></table>';
+  content.innerHTML = html;
+
+  // Wire up expand buttons
+  content.querySelectorAll('.expand-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const detail = document.getElementById('detail-' + btn.dataset.idx);
+      if (detail) {
+        detail.classList.toggle('visible');
+        btn.textContent = detail.classList.contains('visible') ? 'hide' : 'details';
+      }
+    });
+  });
+
+  // Auto-expand the highlighted row
+  if (lastHighlight) {
+    const highlighted = strategies.find(s => s.name === lastHighlight);
+    if (highlighted) {
+      const idx = strategies.indexOf(highlighted);
+      const detail = document.getElementById('detail-' + idx);
+      if (detail) {
+        detail.classList.add('visible');
+        const btn = content.querySelector(`.expand-btn[data-idx="${idx}"]`);
+        if (btn) btn.textContent = 'hide';
+      }
+    }
+  }
+}
+
+function esc(s) {
+  const d = document.createElement('div');
+  d.textContent = s;
+  return d.innerHTML;
+}
+
+/* ── load leaderboard on page open ───────────────────────── */
+async function loadLeaderboard() {
+  try {
+    const resp = await fetch('/api/leaderboard');
+    if (!resp.ok) throw new Error(resp.statusText);
+    const data = await resp.json();
+    renderLeaderboard(data);
+  } catch (err) {
+    document.getElementById('lb-subtitle').textContent =
+      'No results yet. Submit a strategy to get started.';
+  }
+}
+
+/* ── submit handler ──────────────────────────────────────── */
+const btnSubmit = document.getElementById('btn-submit');
+const statusEl = document.getElementById('status');
+
+btnSubmit.addEventListener('click', async () => {
+  const name = document.getElementById('strat-name').value.trim();
+  const author = document.getElementById('strat-author').value.trim();
+  const description = document.getElementById('strat-desc').value.trim();
+  const code = editor.value;
+
+  if (!name) {
+    statusEl.className = 'error';
+    statusEl.textContent = 'Strategy name is required.';
+    return;
+  }
+  if (!code.trim()) {
+    statusEl.className = 'error';
+    statusEl.textContent = 'Strategy code is required.';
+    return;
+  }
+
+  btnSubmit.disabled = true;
+  statusEl.className = '';
+  statusEl.innerHTML = '<span class="spinner"></span>Running simulation across all markets...';
+
+  try {
+    const resp = await fetch('/api/submit', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name, author, description, code }),
+    });
+
+    const data = await resp.json();
+
+    if (!resp.ok || data.error) {
+      statusEl.className = 'error';
+      statusEl.textContent = data.error || 'Submission failed.';
+      return;
+    }
+
+    // Find the submitted strategy's rank
+    const submitted = data.strategies.find(s => s.name === name);
+    const rank = submitted ? submitted.rank : '?';
+
+    statusEl.className = 'success';
+    statusEl.textContent = `Submitted! "${name}" ranked #${rank} of ${data.strategies.length}.`;
+
+    lastHighlight = name;
+    renderLeaderboard(data);
+
+    // Show load errors if any
+    if (data.load_errors && data.load_errors.length > 0) {
+      const errNames = data.load_errors.map(e => e.filename).join(', ');
+      statusEl.textContent += ` (${data.load_errors.length} other file(s) had errors: ${errNames})`;
+    }
+  } catch (err) {
+    statusEl.className = 'error';
+    statusEl.textContent = 'Network error: ' + err.message;
+  } finally {
+    btnSubmit.disabled = false;
+  }
+});
+
+/* ── boot ────────────────────────────────────────────────── */
+loadLeaderboard();
+</script>
+</body>
+</html>

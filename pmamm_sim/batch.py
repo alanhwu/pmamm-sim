@@ -26,6 +26,8 @@ def run_full_sweep(
     results_dir: str | Path,
     liquidity: float,
     strategy_filter: set[str] | None = None,
+    extra_strategies: list[dict] | None = None,
+    include_builtins: bool = True,
 ):
     """Sweep all strategies across all markets, write per-strategy files + index.json."""
     data_folder = Path(data_folder)
@@ -35,9 +37,15 @@ def run_full_sweep(
     manifest = load_manifest(data_folder / "manifest.json")
     engine = SimulationEngine()
 
-    strategies = STRATEGY_REGISTRY
+    strategies = list(STRATEGY_REGISTRY) if include_builtins else []
+    if extra_strategies:
+        strategies.extend(extra_strategies)
     if strategy_filter:
         strategies = [s for s in strategies if s["name"] in strategy_filter]
+
+    if not strategies:
+        print("No strategies to run.")
+        return
 
     num_markets = len(manifest["markets"])
     print(f"\n=== Strategy Sweep: {len(strategies)} strategies x {num_markets} markets ===")

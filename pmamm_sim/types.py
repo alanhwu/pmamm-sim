@@ -1,4 +1,5 @@
 from dataclasses import dataclass, field
+from typing import Protocol, runtime_checkable
 
 
 @dataclass(frozen=True)
@@ -56,3 +57,30 @@ class SimResult:
     num_trades_skipped: int = 0    # Trades inside no-arb band
     skip_rate: float = 0.0         # skipped / (executed + skipped)
     trade_log: list = field(default_factory=list)
+
+
+@runtime_checkable
+class StrategyProtocol(Protocol):
+    """Formal interface for fee strategies.
+
+    Any class with before_swap(PendingTrade) -> FeeQuote and
+    after_swap(TradeInfo | None) -> None satisfies this protocol.
+    """
+    def before_swap(self, pending: PendingTrade) -> FeeQuote: ...
+    def after_swap(self, trade: TradeInfo | None) -> None: ...
+
+
+def validate_strategy(instance: object, label: str = "strategy") -> None:
+    """Raise TypeError if instance lacks required before_swap / after_swap methods."""
+    import inspect
+    for method_name in ("before_swap", "after_swap"):
+        method = getattr(instance, method_name, None)
+        if method is None or not callable(method):
+            raise TypeError(f"{label}: missing callable method '{method_name}'")
+        sig = inspect.signature(method)
+        # bound method: 'self' is already bound, so expect exactly 1 parameter
+        if len(sig.parameters) != 1:
+            raise TypeError(
+                f"{label}.{method_name} expects 1 parameter, "
+                f"got {len(sig.parameters)}"
+            )
