@@ -150,6 +150,105 @@ Use `--strategies "FixedFee(100bps)"` only when you intentionally want a faster 
 
 ---
 
+## Competition
+
+Submit fee strategies and compete on the leaderboard. Strategies are ranked by average return on liquidity across all markets.
+
+### Quick start
+
+```bash
+# CLI
+python -m pmamm_sim compete ./submissions/
+
+# Web UI
+python -m pmamm_sim serve
+# Open http://localhost:8080/compete.html
+```
+
+### Writing a strategy
+
+Your strategy is a Python class with two methods:
+
+```python
+class Strategy:
+    def __init__(self):
+        # Called once per market, no arguments. Set up any state here.
+        self.fee = 100 / 10_000  # 100 bps
+
+    def before_swap(self, pending: PendingTrade) -> FeeQuote:
+        # Set fees for this trade. Return FeeQuote(bid_fee, ask_fee).
+        return FeeQuote(bid_fee=self.fee, ask_fee=self.fee)
+
+    def after_swap(self, trade: TradeInfo | None) -> None:
+        # Update state after a trade executes. trade is None if skipped.
+        pass
+```
+
+### What your strategy sees
+
+**`before_swap(pending)`** receives a `PendingTrade` with:
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `side` | `str` | `"buy_yes"` or `"sell_yes"` (trader's perspective) |
+| `fair_price` | `float` | External market's fair value signal (0 to 1) |
+| `current_spot` | `float` | AMM's spot price before this trade |
+| `reserve_x` | `float` | Current YES reserves in the pool |
+| `reserve_y` | `float` | Current USDC reserves in the pool |
+| `timestamp` | `int` | Unix timestamp of this trade |
+| `time_to_resolution` | `float` | Seconds until the market resolves |
+| `normalized_time` | `float` | 0.0 (market open) to 1.0 (resolution) |
+
+**`before_swap`** must return a `FeeQuote(bid_fee, ask_fee)` where fees are decimals (e.g. `0.01` = 1% = 100 bps).
+
+**`after_swap(trade)`** receives a `TradeInfo` (or `None` if the trade was skipped because it fell inside the no-arbitrage band):
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `side` | `str` | `"buy_yes"` or `"sell_yes"` |
+| `amount_x` | `float` | YES shares traded |
+| `amount_y` | `float` | USDC traded |
+| `fee_amount` | `float` | Fee collected (in input token units) |
+| `timestamp` | `int` | Unix timestamp |
+| `reserve_x` | `float` | Post-trade YES reserves |
+| `reserve_y` | `float` | Post-trade USDC reserves |
+| `time_to_resolution` | `float` | Seconds until resolution |
+| `normalized_time` | `float` | 0.0 to 1.0 |
+| `fair_price` | `float` | The fair value signal for this trade |
+| `post_spot` | `float` | AMM spot price after the trade |
+| `realized_price` | `float` | Actual execution price (amount_y / amount_x) |
+
+### How it works
+
+For each historical trade, a rational arbitrageur pushes the AMM toward the fair price but stops when the fee eats into profit. Higher fees create a wider **no-arbitrage band** — more trades get skipped, but each executed trade earns more fees. The tradeoff between fee revenue and skipped volume is what makes this interesting.
+
+A fresh `Strategy()` instance is created for each market, so state resets between markets but persists across trades within one market.
+
+### Allowed imports
+
+Submissions are sandboxed. You may only import from:
+
+- `math`, `statistics`, `collections`, `dataclasses`, `functools`, `itertools`
+- `pmamm_sim.types` (`FeeQuote`, `PendingTrade`, `TradeInfo`)
+
+Calls to `open`, `exec`, `eval`, `__import__` and access to dunder attributes like `__class__`, `__subclasses__` are blocked.
+
+### Submission format
+
+**Web UI**: Paste the class body at `http://localhost:8080/compete.html`.
+
+**CLI**: Drop a `.py` file in `submissions/`. The class can be named `Strategy` or anything with `before_swap` and `after_swap` methods. Optional module-level metadata:
+
+```python
+STRATEGY_NAME = "MyStrategy"
+AUTHOR = "Your Name"
+DESCRIPTION = "One-line description"
+```
+
+See `submissions/_template.py` for a documented example.
+
+---
+
 ## Further reading in code
 
 - Normalization from Dome → YES/USDC: `fetch_trades.py` (`normalize_trade`, etc.).
