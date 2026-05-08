@@ -76,6 +76,13 @@
       "question": "Will Stade Rennais FC 1901 win on 2026-01-18?",
       "trades": 6931,
       "volume_usd": 6995888
+    },
+    {
+      "file": "trades_will-elon-musk-buy-msnbc.json",
+      "outcome": 0,
+      "question": "Will Elon Musk buy MSNBC?",
+      "trades": 16198,
+      "volume_usd": 2252816
     }
   ]
 }
