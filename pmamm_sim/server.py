@@ -17,6 +17,7 @@ from pathlib import Path
 
 from pmamm_sim.batch import run_full_sweep
 from pmamm_sim.loader import load_submissions
+from pmamm_sim.sandbox import validate_code_safety
 
 
 class CompetitionHandler(SimpleHTTPRequestHandler):
@@ -139,6 +140,14 @@ class CompetitionHandler(SimpleHTTPRequestHandler):
         except SyntaxError as e:
             self._send_json({
                 "error": f"Syntax error: {e.msg} (line {e.lineno})",
+            }, 400)
+            return
+
+        # Safety check — reject dangerous imports, builtins, dunder access
+        violations = validate_code_safety(code)
+        if violations:
+            self._send_json({
+                "error": "Code blocked: " + "; ".join(violations),
             }, 400)
             return
 

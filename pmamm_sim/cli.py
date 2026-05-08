@@ -41,9 +41,10 @@ def main():
                             help="Directory for strategy submissions (default: submissions)")
         parser.add_argument("--liquidity", type=float, default=10000,
                             help="Initial LP deposit in USDC per market (default: 10000)")
-        parser.add_argument("--include-builtins", action="store_true",
-                            help="Include built-in strategies in competition runs")
+        parser.add_argument("--no-builtins", action="store_true",
+                            help="Exclude built-in strategies from competition runs")
         args = parser.parse_args(sys.argv[2:])
+        args.include_builtins = not args.no_builtins
         _run_serve(args)
     elif len(sys.argv) > 1 and sys.argv[1] == "compete":
         parser = argparse.ArgumentParser(

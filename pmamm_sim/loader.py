@@ -3,6 +3,7 @@
 import importlib.util
 from pathlib import Path
 
+from pmamm_sim.sandbox import validate_code_safety
 from pmamm_sim.types import validate_strategy
 
 
@@ -27,6 +28,16 @@ def load_submission(filepath: Path) -> dict:
     """
     filename = filepath.name
     module_name = f"submission_{filepath.stem}"
+
+    # Safety check before executing
+    try:
+        source = filepath.read_text()
+    except Exception as e:
+        raise SubmissionError(filename, f"Cannot read file: {e}") from e
+
+    violations = validate_code_safety(source)
+    if violations:
+        raise SubmissionError(filename, "Blocked: " + "; ".join(violations))
 
     try:
         spec = importlib.util.spec_from_file_location(module_name, str(filepath))
