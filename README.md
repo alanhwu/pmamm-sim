@@ -50,7 +50,7 @@ The **simulator never calls Dome**; only `fetch_trades.py` needs a `DOME_API_KEY
 
 ## Simulation model (short)
 
-- **AMM** — `ConstantProductAMM` maintains YES and USDC reserves with \(x \cdot y = k\). Spot implied probability is `reserve_y / reserve_x`. Initial reserves are set from **initial liquidity** and **starting YES probability** (default: infer from the first trade).
+- **AMM** — `ConstantProductAMM` maintains YES and NO token reserves with \(yes \cdot no = k\). Spot implied probability is `reserve_no / (reserve_yes + reserve_no)`. Initial reserves are set from **initial liquidity** and **starting YES probability** (default: infer from the first trade). At resolution, the losing token goes to $0 and reserves are near-worthless (arbed away); LP returns come from **fees in the winning token**.
 
 - **Fair price** — Each historical observation supplies `yes_price`; that is the signal the external “market” believes is fair at that instant.
 

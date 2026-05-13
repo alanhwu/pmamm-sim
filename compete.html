@@ -231,8 +231,8 @@ const DEFAULT_CODE = `class Strategy:
           .side             "buy_yes" or "sell_yes"
           .fair_price       external fair value signal (0-1)
           .current_spot     AMM spot price before trade
-          .reserve_x        YES reserves
-          .reserve_y        USDC reserves
+          .reserve_yes      YES reserves
+          .reserve_no       NO reserves
           .timestamp         unix timestamp
           .time_to_resolution  seconds until resolution
           .normalized_time   0.0 (open) to 1.0 (resolution)

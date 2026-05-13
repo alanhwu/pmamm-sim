@@ -134,8 +134,8 @@ class Strategy:
 | `pending.side` | `"buy_yes"` or `"sell_yes"` — which direction the trade will go |
 | `pending.fair_price` | The external market's current fair value (0 to 1) |
 | `pending.current_spot` | Your AMM's spot price right now |
-| `pending.reserve_x` | YES tokens in the pool |
-| `pending.reserve_y` | USDC in the pool |
+| `pending.reserve_yes` | YES tokens in the pool |
+| `pending.reserve_no` | NO tokens in the pool |
 | `pending.timestamp` | Unix timestamp |
 | `pending.time_to_resolution` | Seconds until the market resolves |
 | `pending.normalized_time` | 0.0 = market just opened, 1.0 = resolution |
@@ -145,13 +145,13 @@ class Strategy:
 | Field | What it is |
 |-------|------------|
 | `trade.side` | Direction of the executed trade |
-| `trade.amount_x` | YES shares that moved |
-| `trade.amount_y` | USDC that moved |
+| `trade.amount_yes` | YES shares that moved |
+| `trade.amount_no` | NO shares that moved |
 | `trade.fee_amount` | Fee you earned on this trade |
-| `trade.reserve_x` / `reserve_y` | Pool reserves after the trade |
+| `trade.reserve_yes` / `reserve_no` | Pool reserves after the trade |
 | `trade.fair_price` | Fair value signal for this trade |
 | `trade.post_spot` | Your AMM's spot price after the trade |
-| `trade.realized_price` | Actual execution price (amount_y / amount_x) |
+| `trade.realized_price` | Implied YES probability of execution price |
 | `trade.normalized_time` | Same time field — useful for time-based state updates |
 
 ---
@@ -162,7 +162,7 @@ class Strategy:
 
 **Bid vs ask fees.** `bid_fee` is charged when the trader sells YES to you. `ask_fee` is charged when the trader buys YES from you. You can make them asymmetric (e.g., charge more on the side where you're getting adversely selected).
 
-**Resolution PnL.** At the end, the market resolves YES or NO. If it resolves YES, your YES reserves and YES fees are worth $1 each. If NO, they're worth $0. Strategies that accumulate lots of YES fees do great on YES-resolution markets but get crushed on NO-resolution markets. The best strategies are robust across both.
+**Resolution PnL.** At the end, the market resolves YES or NO. The pool holds YES and NO tokens; the losing side goes to $0. Arbitrageurs drain the winning token from the pool as the price approaches 0 or 1, so reserves are worth ~$0 at resolution. The only LP return is **fees in the winning token**. If you accumulated 600 YES fees and 400 NO fees, and YES wins, your return is $600. The NO fees are worthless. The best strategies accumulate fees on both sides to be robust across outcomes.
 
 **Fresh state per market.** `__init__` is called once per market with no arguments. State you build up (like an EWMA tracker) resets between markets but persists across all trades within one market.
 

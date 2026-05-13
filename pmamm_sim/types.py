@@ -4,8 +4,8 @@ from typing import Protocol, runtime_checkable
 
 @dataclass(frozen=True)
 class FeeQuote:
-    bid_fee: float  # Fee when AMM buys YES (trader sells YES to pool)
-    ask_fee: float  # Fee when AMM sells YES (trader buys YES from pool)
+    bid_fee: float  # Fee when trader sells YES (gives YES, gets NO)
+    ask_fee: float  # Fee when trader buys YES (gives NO, gets YES)
 
 
 @dataclass(frozen=True)
@@ -14,8 +14,8 @@ class PendingTrade:
     side: str                  # "buy_yes" or "sell_yes" (from trader's perspective)
     fair_price: float          # Where the market believes price should be
     current_spot: float        # AMM's current spot price before trade
-    reserve_x: float           # Current YES reserves
-    reserve_y: float           # Current USDC reserves
+    reserve_yes: float         # Current YES reserves
+    reserve_no: float          # Current NO reserves
     timestamp: int             # Unix timestamp
     time_to_resolution: float  # Seconds until market resolves
     normalized_time: float     # 0.0 (market open) to 1.0 (resolution)
@@ -25,17 +25,17 @@ class PendingTrade:
 class TradeInfo:
     """What the strategy sees AFTER a trade executes (for afterSwap hook)."""
     side: str                  # "buy_yes" or "sell_yes" (from trader's perspective)
-    amount_x: float            # YES shares traded
-    amount_y: float            # USDC traded
+    amount_yes: float          # YES shares traded
+    amount_no: float           # NO shares traded
     fee_amount: float          # Fee collected on this trade (in input token)
     timestamp: int
-    reserve_x: float           # Post-trade YES reserves
-    reserve_y: float           # Post-trade USDC reserves
+    reserve_yes: float         # Post-trade YES reserves
+    reserve_no: float          # Post-trade NO reserves
     time_to_resolution: float
     normalized_time: float
     fair_price: float          # The fair value signal from historical data
     post_spot: float           # AMM's spot price after trade (differs from fair_price)
-    realized_price: float      # Actual execution price (amount_y / amount_x)
+    realized_price: float      # Implied YES probability of execution price
 
 
 @dataclass

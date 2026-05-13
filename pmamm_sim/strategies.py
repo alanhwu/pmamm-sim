@@ -64,7 +64,7 @@ class VolatilityAwareFee:
     def after_swap(self, trade: TradeInfo | None) -> None:
         if trade is None:
             return
-        price = trade.reserve_y / trade.reserve_x if trade.reserve_x > 0 else trade.fair_price
+        price = trade.post_spot
         if self._last_price is not None:
             abs_change = abs(price - self._last_price)
             if self._initialized:
@@ -118,7 +118,7 @@ class CombinedFee:
     def after_swap(self, trade: TradeInfo | None) -> None:
         if trade is None:
             return
-        price = trade.reserve_y / trade.reserve_x if trade.reserve_x > 0 else trade.fair_price
+        price = trade.post_spot
         if self._last_price is not None:
             abs_change = abs(price - self._last_price)
             if self._initialized:
@@ -183,9 +183,9 @@ class EWMAMomentumFee:
 
     def before_swap(self, pending: PendingTrade) -> FeeQuote:
         ratio = (
-            pending.reserve_y / pending.reserve_x
-            if pending.reserve_x > 0
-            else pending.fair_price
+            pending.reserve_no / pending.reserve_yes
+            if pending.reserve_yes > 0
+            else pending.fair_price / (1.0 - pending.fair_price)
         )
 
         # First trade: initialise EWMA, return symmetric base + time bump
@@ -220,9 +220,9 @@ class EWMAMomentumFee:
         if trade is None:
             return
         ratio = (
-            trade.reserve_y / trade.reserve_x
-            if trade.reserve_x > 0
-            else trade.fair_price
+            trade.reserve_no / trade.reserve_yes
+            if trade.reserve_yes > 0
+            else trade.fair_price / (1.0 - trade.fair_price)
         )
         if self._ewma_ratio is None:
             self._ewma_ratio = ratio

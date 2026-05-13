@@ -128,8 +128,8 @@ class SimulationEngine:
             side=side,
             fair_price=fair_price,
             current_spot=current_spot,
-            reserve_x=amm.reserve_x,
-            reserve_y=amm.reserve_y,
+            reserve_yes=amm.reserve_yes,
+            reserve_no=amm.reserve_no,
             timestamp=trade.timestamp,
             time_to_resolution=time_to_resolution,
             normalized_time=normalized_time,
@@ -150,22 +150,23 @@ class SimulationEngine:
 
         # 4. Build TradeInfo for afterSwap
         if side == "buy_yes":
-            amount_x = result["output"]       # YES out to trader
-            amount_y = result["gross_input"]   # USDC in from trader
+            amount_yes = result["output"]       # YES out to trader
+            amount_no = result["gross_input"]    # NO in from trader
         else:
-            amount_x = result["gross_input"]   # YES in from trader
-            amount_y = result["output"]        # USDC out to trader
+            amount_yes = result["gross_input"]   # YES in from trader
+            amount_no = result["output"]         # NO out to trader
 
-        realized_price = amount_y / amount_x if amount_x > 0 else 0.0
+        total_tokens = amount_yes + amount_no
+        realized_price = amount_no / total_tokens if total_tokens > 0 else 0.0
 
         trade_info = TradeInfo(
             side=side,
-            amount_x=amount_x,
-            amount_y=amount_y,
+            amount_yes=amount_yes,
+            amount_no=amount_no,
             fee_amount=result["fee_amount"],
             timestamp=trade.timestamp,
-            reserve_x=amm.reserve_x,
-            reserve_y=amm.reserve_y,
+            reserve_yes=amm.reserve_yes,
+            reserve_no=amm.reserve_no,
             time_to_resolution=time_to_resolution,
             normalized_time=normalized_time,
             fair_price=fair_price,
@@ -179,6 +180,6 @@ class SimulationEngine:
         # 6. Track PnL
         tracker.record_trade(
             trade_info, fee_rate=fee,
-            accumulated_fees_x=amm.accumulated_fees_x,
-            accumulated_fees_y=amm.accumulated_fees_y,
+            accumulated_fees_yes=amm.accumulated_fees_yes,
+            accumulated_fees_no=amm.accumulated_fees_no,
         )

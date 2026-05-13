@@ -26,15 +26,15 @@ PendingTrade fields (available in before_swap):
     side              "buy_yes" or "sell_yes" (trader's perspective)
     fair_price        Where the market believes price should be (0-1)
     current_spot      AMM's current spot price before trade
-    reserve_x         Current YES reserves
-    reserve_y         Current USDC reserves
+    reserve_yes       Current YES reserves
+    reserve_no        Current NO reserves
     timestamp         Unix timestamp
     time_to_resolution  Seconds until market resolves
     normalized_time   0.0 (market open) to 1.0 (resolution)
 
 TradeInfo fields (available in after_swap, or None if skipped):
-    side, amount_x, amount_y, fee_amount, timestamp,
-    reserve_x, reserve_y, time_to_resolution, normalized_time,
+    side, amount_yes, amount_no, fee_amount, timestamp,
+    reserve_yes, reserve_no, time_to_resolution, normalized_time,
     fair_price, post_spot, realized_price
 """
 
