@@ -86,6 +86,7 @@ def run_full_sweep(
         index["markets"].append({
             "question": md["spec"]["question"],
             "outcome": md["spec"]["outcome"],
+            "category": md["spec"].get("category", "other"),
             "num_trades": md["metadata"]["total_collapsed_trades"],
             "initial_prob": md["initial_prob"],
             "market_start": md["market_start"],
@@ -137,6 +138,7 @@ def run_full_sweep(
 
             per_market_agg.append({
                 "question": md["spec"]["question"],
+                "category": md["spec"].get("category", "other"),
                 "return_on_liquidity": result.return_on_liquidity,
                 "fee_revenue": result.fee_revenue,
                 "total_pnl": result.total_pnl,
@@ -162,10 +164,20 @@ def run_full_sweep(
         total_signals = total_executed + total_skipped
         avg_skip_rate = total_skipped / total_signals if total_signals > 0 else 0.0
 
+        # Category-weighted score: avg within each category, then avg across categories
+        cat_returns: dict[str, list[float]] = {}
+        for m in per_market_agg:
+            cat_returns.setdefault(m["category"], []).append(m["return_on_liquidity"])
+        cat_avgs = {cat: sum(rets) / len(rets) for cat, rets in cat_returns.items()}
+        category_score = sum(cat_avgs.values()) / len(cat_avgs) if cat_avgs else 0.0
+
         index["strategies"].append(strat_name)
         index["strategy_files"][strat_name] = filename
         index["aggregate"][strat_name] = {
+            "author": strat_spec.get("author", ""),
             "avg_return": avg_ret,
+            "category_score": category_score,
+            "category_averages": cat_avgs,
             "total_fees": total_fees,
             "total_executed": total_executed,
             "total_skipped": total_skipped,
@@ -175,9 +187,8 @@ def run_full_sweep(
 
         print(
             f"  {strat_name + '...':<30} "
-            f"avg return: {avg_ret:+.1%}  "
+            f"score: {category_score:+.1%}  "
             f"fees: ${total_fees:,.0f}  "
-            f"executed: {total_executed:,}/{total_signals:,} "
             f"(skip {avg_skip_rate:.1%})"
         )
 

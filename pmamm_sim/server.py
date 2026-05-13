@@ -75,14 +75,20 @@ class CompetitionHandler(SimpleHTTPRequestHandler):
             index = json.load(f)
 
         agg = index.get("aggregate", {})
-        ranked = sorted(agg.items(), key=lambda kv: kv[1]["avg_return"], reverse=True)
+        def sort_key(kv):
+            return kv[1].get("category_score", kv[1]["avg_return"])
+
+        ranked = sorted(agg.items(), key=sort_key, reverse=True)
 
         strategies = []
         for rank, (name, stats) in enumerate(ranked, 1):
             strategies.append({
                 "rank": rank,
                 "name": name,
+                "author": stats.get("author", ""),
                 "avg_return": stats["avg_return"],
+                "category_score": stats.get("category_score"),
+                "category_averages": stats.get("category_averages"),
                 "total_fees": stats["total_fees"],
                 "avg_skip_rate": stats["avg_skip_rate"],
                 "per_market": stats["per_market"],
@@ -211,14 +217,20 @@ class CompetitionHandler(SimpleHTTPRequestHandler):
             index = json.load(f)
 
         agg = index.get("aggregate", {})
-        ranked = sorted(agg.items(), key=lambda kv: kv[1]["avg_return"], reverse=True)
+        def sort_key(kv):
+            return kv[1].get("category_score", kv[1]["avg_return"])
+
+        ranked = sorted(agg.items(), key=sort_key, reverse=True)
 
         strategies = []
         for rank, (name, stats) in enumerate(ranked, 1):
             strategies.append({
                 "rank": rank,
                 "name": name,
+                "author": stats.get("author", ""),
                 "avg_return": stats["avg_return"],
+                "category_score": stats.get("category_score"),
+                "category_averages": stats.get("category_averages"),
                 "total_fees": stats["total_fees"],
                 "avg_skip_rate": stats["avg_skip_rate"],
                 "per_market": stats["per_market"],

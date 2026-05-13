@@ -153,6 +153,25 @@
   }
   .expand-btn:hover { background: #1e293b; color: #94a3b8; }
 
+  /* ── category tabs ─────────────────────────────────────── */
+  .lb-tabs {
+    display: flex; gap: 0; margin-bottom: 16px; border-bottom: 1px solid #334155;
+  }
+  .lb-tab {
+    background: none; border: none; color: #64748b; cursor: pointer;
+    padding: 8px 16px; font-size: 13px; font-family: inherit; font-weight: 500;
+    border-bottom: 2px solid transparent; transition: color .15s, border-color .15s;
+  }
+  .lb-tab:hover { color: #94a3b8; }
+  .lb-tab.active { color: #e2e8f0; border-bottom-color: #818cf8; }
+  .lb-tab .tab-count {
+    font-size: 11px; color: #475569; margin-left: 4px;
+  }
+  .lb-tab.active .tab-count { color: #64748b; }
+
+  .lb-tab-panel { display: none; }
+  .lb-tab-panel.active { display: block; }
+
   /* ── responsive ────────────────────────────────────────── */
   @media (max-width: 900px) {
     #main { flex-direction: column; }
@@ -275,42 +294,145 @@ function renderLeaderboard(data) {
 
   const nMarkets = markets ? markets.length : 0;
   const liq = config?.initial_liquidity || 10000;
-  subtitle.textContent = `${nMarkets} markets | $${liq.toLocaleString()} liquidity per market`;
+
+  // Collect categories
+  const categories = [...new Set((markets || []).map(m => m.category || 'other'))].sort();
+  const catCounts = {};
+  (markets || []).forEach(m => { const c = m.category || 'other'; catCounts[c] = (catCounts[c] || 0) + 1; });
+
+  subtitle.textContent = `${nMarkets} markets | $${liq.toLocaleString()} liquidity | ${categories.length} categories`;
+
+  // Build tabs
+  let html = '<div class="lb-tabs">';
+  html += `<button class="lb-tab active" data-tab="overall">Overall<span class="tab-count">${nMarkets}</span></button>`;
+  categories.forEach(cat => {
+    html += `<button class="lb-tab" data-tab="${esc(cat)}">${esc(cat)}<span class="tab-count">${catCounts[cat]}</span></button>`;
+  });
+  html += '</div>';
+
+  // Overall panel — ranked by category_score
+  const overallSorted = [...strategies].sort((a, b) => {
+    const sa = a.category_score != null ? a.category_score : a.avg_return;
+    const sb = b.category_score != null ? b.category_score : b.avg_return;
+    return sb - sa;
+  });
+  html += '<div class="lb-tab-panel active" id="panel-overall">';
+  html += buildTable(overallSorted, strategies, markets, 'category_score', null);
+  html += '</div>';
+
+  // Per-category panels
+  categories.forEach(cat => {
+    // Rank by this category's avg return
+    const catSorted = [...strategies].sort((a, b) => {
+      const ra = a.category_averages?.[cat] ?? -Infinity;
+      const rb = b.category_averages?.[cat] ?? -Infinity;
+      return rb - ra;
+    });
+    html += `<div class="lb-tab-panel" id="panel-${esc(cat)}">`;
+    html += buildTable(catSorted, strategies, markets, 'category', cat);
+    html += '</div>';
+  });
+
+  content.innerHTML = html;
+
+  // Wire up tabs
+  content.querySelectorAll('.lb-tab').forEach(tab => {
+    tab.addEventListener('click', () => {
+      content.querySelectorAll('.lb-tab').forEach(t => t.classList.remove('active'));
+      content.querySelectorAll('.lb-tab-panel').forEach(p => p.classList.remove('active'));
+      tab.classList.add('active');
+      const panel = document.getElementById('panel-' + tab.dataset.tab);
+      if (panel) panel.classList.add('active');
+    });
+  });
+
+  // Wire up expand buttons
+  content.querySelectorAll('.expand-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const detail = document.getElementById(btn.dataset.detail);
+      if (detail) {
+        detail.classList.toggle('visible');
+        btn.textContent = detail.classList.contains('visible') ? 'hide' : 'details';
+      }
+    });
+  });
+
+  // Auto-expand the highlighted row in the active panel
+  if (lastHighlight) {
+    content.querySelectorAll(`tr[data-name="${CSS.escape(lastHighlight)}"]`).forEach(row => {
+      const detailId = row.querySelector('.expand-btn')?.dataset.detail;
+      if (detailId) {
+        const detail = document.getElementById(detailId);
+        if (detail) {
+          detail.classList.add('visible');
+          row.querySelector('.expand-btn').textContent = 'hide';
+        }
+      }
+    });
+  }
+}
+
+function buildTable(sorted, allStrategies, markets, scoreMode, category) {
+  // scoreMode: 'category_score' for overall, 'category' for per-cat
+  const prefix = category ? `cat-${category}` : 'overall';
 
   let html = '<table class="lb-table"><thead><tr>';
-  html += '<th>Rank</th><th>Strategy</th>';
-  html += '<th class="num">Avg Return</th>';
-  html += '<th class="num">Total Fees</th>';
+  html += '<th>Rank</th><th>Strategy</th><th>Author</th>';
+  html += `<th class="num">${category ? 'Avg Return' : 'Score'}</th>`;
   html += '<th class="num">Skip Rate</th>';
   html += '<th></th>';
   html += '</tr></thead><tbody>';
 
-  strategies.forEach((s, idx) => {
+  sorted.forEach((s, idx) => {
+    const rank = idx + 1;
     const isHighlight = lastHighlight && s.name === lastHighlight;
-    const rankClass = s.rank <= 3 ? ` rank-${s.rank}` : '';
-    const retClass = s.avg_return >= 0 ? 'green' : 'red';
+    const rankClass = rank <= 3 ? ` rank-${rank}` : '';
     const rowClass = isHighlight ? ' class="highlight"' : '';
 
-    html += `<tr${rowClass} data-idx="${idx}">`;
-    html += `<td class="rank-cell${rankClass}">${s.rank}</td>`;
+    let score;
+    if (scoreMode === 'category') {
+      // Try pre-computed, fall back to computing from per_market
+      score = s.category_averages?.[category] ?? null;
+      if (score == null && s.per_market) {
+        const catMarkets = s.per_market.filter(m => m.category === category);
+        if (catMarkets.length > 0) {
+          score = catMarkets.reduce((sum, m) => sum + m.return_on_liquidity, 0) / catMarkets.length;
+        }
+      }
+    } else {
+      score = s.category_score != null ? s.category_score : s.avg_return;
+    }
+
+    const retClass = score != null && score >= 0 ? 'green' : 'red';
+    const scoreStr = score != null ? fmtPct(score) : 'n/a';
+
+    // Filter per_market to this category if applicable
+    const detailMarkets = category
+      ? (s.per_market || []).filter(m => m.category === category)
+      : (s.per_market || []);
+
+    const detailId = `${prefix}-detail-${idx}`;
+
+    html += `<tr${rowClass} data-name="${esc(s.name)}">`;
+    html += `<td class="rank-cell${rankClass}">${rank}</td>`;
     html += `<td class="strat-name">${esc(s.name)}</td>`;
-    html += `<td class="num ${retClass}">${fmtPct(s.avg_return)}</td>`;
-    html += `<td class="num">${fmtUsd(s.total_fees)}</td>`;
+    html += `<td style="color:#94a3b8;font-size:12px">${esc(s.author || '')}</td>`;
+    html += `<td class="num ${retClass}">${scoreStr}</td>`;
     html += `<td class="num">${(s.avg_skip_rate * 100).toFixed(1)}%</td>`;
-    html += `<td><button class="expand-btn" data-idx="${idx}">details</button></td>`;
+    html += `<td><button class="expand-btn" data-detail="${detailId}">details</button></td>`;
     html += '</tr>';
 
-    // Per-market detail row (hidden by default)
-    if (s.per_market && markets) {
-      html += `<tr class="market-detail" id="detail-${idx}"><td colspan="6">`;
+    // Detail row
+    if (detailMarkets.length > 0) {
+      html += `<tr class="market-detail" id="${detailId}"><td colspan="6">`;
       html += '<div class="market-grid">';
       html += '<div style="font-weight:600;color:#64748b">Market</div>';
       html += '<div style="font-weight:600;color:#64748b;text-align:right">Return</div>';
       html += '<div style="font-weight:600;color:#64748b;text-align:right">Fees</div>';
       html += '<div style="font-weight:600;color:#64748b;text-align:right">Skip</div>';
-      s.per_market.forEach((m, mi) => {
+      detailMarkets.forEach(m => {
         const mRetClass = m.return_on_liquidity >= 0 ? 'green' : 'red';
-        const q = m.question || (markets[mi] ? markets[mi].question : `Market ${mi}`);
+        const q = m.question || 'Unknown';
         html += `<div class="mkt-name" title="${esc(q)}">${esc(q)}</div>`;
         html += `<div style="text-align:right" class="${mRetClass}">${fmtPct(m.return_on_liquidity)}</div>`;
         html += `<div style="text-align:right">${fmtUsd(m.fee_revenue)}</div>`;
@@ -321,32 +443,7 @@ function renderLeaderboard(data) {
   });
 
   html += '</tbody></table>';
-  content.innerHTML = html;
-
-  // Wire up expand buttons
-  content.querySelectorAll('.expand-btn').forEach(btn => {
-    btn.addEventListener('click', () => {
-      const detail = document.getElementById('detail-' + btn.dataset.idx);
-      if (detail) {
-        detail.classList.toggle('visible');
-        btn.textContent = detail.classList.contains('visible') ? 'hide' : 'details';
-      }
-    });
-  });
-
-  // Auto-expand the highlighted row
-  if (lastHighlight) {
-    const highlighted = strategies.find(s => s.name === lastHighlight);
-    if (highlighted) {
-      const idx = strategies.indexOf(highlighted);
-      const detail = document.getElementById('detail-' + idx);
-      if (detail) {
-        detail.classList.add('visible');
-        const btn = content.querySelector(`.expand-btn[data-idx="${idx}"]`);
-        if (btn) btn.textContent = 'hide';
-      }
-    }
-  }
+  return html;
 }
 
 function esc(s) {

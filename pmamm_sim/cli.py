@@ -318,26 +318,41 @@ def _print_leaderboard(results_dir: str):
     if not agg:
         return
 
-    ranked = sorted(agg.items(), key=lambda kv: kv[1]["avg_return"], reverse=True)
+    ranked = sorted(agg.items(), key=lambda kv: kv[1].get("category_score", kv[1]["avg_return"]), reverse=True)
 
     n_markets = len(index.get("markets", []))
-    print(f"\n{'=' * 72}")
-    print(f"  LEADERBOARD  ({n_markets} markets, ${index['config']['initial_liquidity']:,.0f} liquidity)")
-    print(f"{'=' * 72}")
-    print(f"  {'Rank':<6} {'Strategy':<30} {'Avg Return':>12} {'Total Fees':>12} {'Skip':>7}")
-    print(f"  {'----':<6} {'--------':<30} {'----------':>12} {'----------':>12} {'----':>7}")
+    categories = sorted(set(m.get("category", "other") for m in index.get("markets", [])))
+
+    print(f"\n{'=' * 80}")
+    print(f"  LEADERBOARD  ({n_markets} markets, categories: {', '.join(categories)})")
+    print(f"{'=' * 80}")
+    print(f"  {'Rank':<6} {'Strategy':<28} {'Score':>14} {'Avg Return':>12} {'Skip':>7}")
+    print(f"  {'----':<6} {'--------':<28} {'----------':>14} {'----------':>12} {'----':>7}")
 
     for i, (name, stats) in enumerate(ranked, 1):
+        score = stats.get("category_score", stats["avg_return"])
         avg_ret = stats["avg_return"]
-        total_fees = stats["total_fees"]
         skip_rate = stats["avg_skip_rate"]
         medal = {1: "1st", 2: "2nd", 3: "3rd"}.get(i, f"{i}th")
         print(
-            f"  {medal:<6} {name:<30} {avg_ret:>+11.2%} "
-            f"${total_fees:>10,.0f} {skip_rate:>6.1%}"
+            f"  {medal:<6} {name:<28} {score:>+13.2%} {avg_ret:>+11.2%} {skip_rate:>6.1%}"
         )
 
-    print(f"{'=' * 72}")
+    # Per-category breakdown
+    if len(categories) > 1:
+        print(f"\n  {'':6} {'Per-category:':<28}", end="")
+        for cat in categories:
+            print(f" {cat:>12}", end="")
+        print()
+        for i, (name, stats) in enumerate(ranked, 1):
+            cat_avgs = stats.get("category_averages", {})
+            print(f"  {'':6} {name:<28}", end="")
+            for cat in categories:
+                v = cat_avgs.get(cat)
+                print(f" {v:>+11.1%}" if v is not None else f" {'n/a':>12}", end="")
+            print()
+
+    print(f"{'=' * 80}")
     print(f"  Results: {results_dir}/  |  Visualizer: python -m pmamm_sim serve")
     print()
 
