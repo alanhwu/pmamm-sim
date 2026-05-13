@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>pmamm-sim Competition</title>
+<title>Prediction Market AMM Dynamic Fee Competition</title>
 <style>
   *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
   body {
@@ -30,7 +30,7 @@
 
   /* ── left: editor panel ────────────────────────────────── */
   #editor-panel {
-    width: 460px; flex-shrink: 0; display: flex; flex-direction: column;
+    width: 690px; flex-shrink: 0; display: flex; flex-direction: column;
     border-right: 1px solid #334155; background: #0d1526;
   }
   #editor-panel h2 {
@@ -182,7 +182,7 @@
 <body>
 
 <div id="top-bar">
-  <h1>pmamm-sim Competition</h1>
+  <h1>Prediction Market AMM Dynamic Fee Competition</h1>
   <div class="nav-links">
     <a href="/visualizer.html">Visualizer</a>
   </div>
@@ -300,13 +300,14 @@ function renderLeaderboard(data) {
   const catCounts = {};
   (markets || []).forEach(m => { const c = m.category || 'other'; catCounts[c] = (catCounts[c] || 0) + 1; });
 
-  subtitle.textContent = `${nMarkets} markets | $${liq.toLocaleString()} liquidity | ${categories.length} categories`;
+  subtitle.textContent = '';
 
   // Build tabs
   let html = '<div class="lb-tabs">';
   html += `<button class="lb-tab active" data-tab="overall">Overall<span class="tab-count">${nMarkets}</span></button>`;
   categories.forEach(cat => {
-    html += `<button class="lb-tab" data-tab="${esc(cat)}">${esc(cat)}<span class="tab-count">${catCounts[cat]}</span></button>`;
+    const label = cat.charAt(0).toUpperCase() + cat.slice(1);
+    html += `<button class="lb-tab" data-tab="${esc(cat)}">${esc(label)}<span class="tab-count">${catCounts[cat]}</span></button>`;
   });
   html += '</div>';
 
