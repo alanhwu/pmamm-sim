@@ -163,8 +163,8 @@
       <div class="cards" id="cards"></div>
       <div class="chart-grid">
         <div class="chart-box"><h3>YES Price</h3><div class="chart-loading hidden" id="load-price">Loading&hellip;</div><canvas id="chart-price"></canvas></div>
-        <div class="chart-box"><h3>Cumulative Fee Revenue</h3><div class="chart-loading hidden" id="load-fees">Loading&hellip;</div><canvas id="chart-fees"></canvas></div>
-        <div class="chart-box"><h3>Net LP Value (Fees &minus; Deposit)</h3><div class="chart-loading hidden" id="load-pnl">Loading&hellip;</div><canvas id="chart-pnl"></canvas></div>
+        <div class="chart-box"><h3>Cumulative Fees (Mark-to-Market)</h3><div class="chart-loading hidden" id="load-fees">Loading&hellip;</div><canvas id="chart-fees"></canvas></div>
+        <div class="chart-box"><h3>Mark-to-Market PnL</h3><div class="chart-loading hidden" id="load-pnl">Loading&hellip;</div><canvas id="chart-pnl"></canvas></div>
         <div class="chart-box"><h3>Fee Rate (bps)</h3><div class="chart-loading hidden" id="load-feeRate">Loading&hellip;</div><canvas id="chart-feeRate"></canvas></div>
       </div>
     </div>
@@ -329,16 +329,20 @@ async function renderDashboard() {
   const skipB = mktB.summary.skip_rate != null ? mktB.summary.skip_rate : 0;
   const execA = mktA.summary.num_trades_executed || mktA.trades.length;
   const execB = mktB.summary.num_trades_executed || mktB.trades.length;
-  const feesA = mktA.trades.length > 0 ? mktA.trades[mktA.trades.length - 1].cumulative_fees : 0;
-  const feesB = mktB.trades.length > 0 ? mktB.trades[mktB.trades.length - 1].cumulative_fees : 0;
+  const pnlA = mktA.summary.total_pnl;
+  const pnlB = mktB.summary.total_pnl;
+  const feeRevA = mktA.summary.fee_revenue;
+  const feeRevB = mktB.summary.fee_revenue;
+  const resA = mktA.summary.resolution_pnl;
+  const resB = mktB.summary.resolution_pnl;
   const cards = [
     { label: stratA, value: fmtPct(mktA.summary.return_on_liquidity), cls: 'color-a', sub: 'Return on Liquidity' },
     { label: stratB, value: fmtPct(mktB.summary.return_on_liquidity), cls: 'color-b', sub: 'Return on Liquidity' },
     { label: 'Delta Return', value: fmtPp(delta), cls: deltaClass, sub: 'A vs B' },
-    { label: 'A Fees', value: fmtUsd(feesA), cls: 'color-a', sub: execA.toLocaleString() + ' trades (skip ' + fmtPct(skipA) + ')' },
-    { label: 'B Fees', value: fmtUsd(feesB), cls: 'color-b', sub: execB.toLocaleString() + ' trades (skip ' + fmtPct(skipB) + ')' },
-    { label: 'A Net', value: fmtUsd(feesA - liq), cls: feesA >= liq ? 'green' : 'red', sub: 'Fees \u2212 Deposit' },
-    { label: 'B Net', value: fmtUsd(feesB - liq), cls: feesB >= liq ? 'green' : 'red', sub: 'Fees \u2212 Deposit' },
+    { label: 'A PnL', value: fmtUsd(pnlA), cls: pnlA >= 0 ? 'green' : 'red', sub: execA.toLocaleString() + ' trades (skip ' + fmtPct(skipA) + ')' },
+    { label: 'B PnL', value: fmtUsd(pnlB), cls: pnlB >= 0 ? 'green' : 'red', sub: execB.toLocaleString() + ' trades (skip ' + fmtPct(skipB) + ')' },
+    { label: 'A Fee Rev.', value: fmtUsd(feeRevA), cls: 'color-a', sub: 'Pre-resolution MTM' },
+    { label: 'B Fee Rev.', value: fmtUsd(feeRevB), cls: 'color-b', sub: 'Pre-resolution MTM' },
   ];
   document.getElementById('cards').innerHTML = cards.map(c =>
     `<div class="card"><div class="label">${c.label}</div><div class="value ${c.cls}">${c.value}</div><div class="sub">${c.sub}</div></div>`

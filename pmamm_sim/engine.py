@@ -31,6 +31,16 @@ class SimulationEngine:
                 normalized_time, time_to_resolution,
             )
 
+        # Final resolution arb: outcome is known, someone arbs to 99/1
+        resolution_price = 0.999 if outcome == 1 else 0.001
+        resolution_trade = MarketTrade(
+            timestamp=market_end, yes_price=resolution_price, usd_volume=0.0,
+        )
+        self._process_single_trade(
+            amm, strategy, tracker, resolution_trade,
+            normalized_time=1.0, time_to_resolution=0,
+        )
+
         return tracker.compute_final(amm, outcome)
 
     def run_replay(
@@ -71,6 +81,20 @@ class SimulationEngine:
                     amm, strategy, tracker, trade,
                     normalized_time, time_to_resolution,
                 )
+
+        # Final resolution arb for both AMMs
+        resolution_price = 0.999 if outcome == 1 else 0.001
+        resolution_trade = MarketTrade(
+            timestamp=market_end, yes_price=resolution_price, usd_volume=0.0,
+        )
+        for amm, strategy, tracker in [
+            (amm_test, test_strategy, pnl_test),
+            (amm_baseline, baseline_strategy, pnl_baseline),
+        ]:
+            self._process_single_trade(
+                amm, strategy, tracker, resolution_trade,
+                normalized_time=1.0, time_to_resolution=0,
+            )
 
         result_test = pnl_test.compute_final(amm_test, outcome)
         result_baseline = pnl_baseline.compute_final(amm_baseline, outcome)
