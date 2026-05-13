@@ -39,7 +39,13 @@ def run_full_sweep(
 
     strategies = list(STRATEGY_REGISTRY) if include_builtins else []
     if extra_strategies:
-        strategies.extend(extra_strategies)
+        seen = {s["name"] for s in strategies}
+        for s in extra_strategies:
+            if s["name"] in seen:
+                print(f"  SKIP  {s['name']} (duplicate of existing strategy)")
+                continue
+            seen.add(s["name"])
+            strategies.append(s)
     if strategy_filter:
         strategies = [s for s in strategies if s["name"] in strategy_filter]
 
