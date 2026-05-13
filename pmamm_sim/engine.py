@@ -183,11 +183,13 @@ class SimulationEngine:
         total_tokens = amount_yes + amount_no
         realized_price = amount_no / total_tokens if total_tokens > 0 else 0.0
 
+        fee_amount = result["fee_amount"]
         trade_info = TradeInfo(
             side=side,
             amount_yes=amount_yes,
             amount_no=amount_no,
-            fee_amount=result["fee_amount"],
+            fee_yes=fee_amount if side == "sell_yes" else 0.0,
+            fee_no=fee_amount if side == "buy_yes" else 0.0,
             timestamp=trade.timestamp,
             reserve_yes=amm.reserve_yes,
             reserve_no=amm.reserve_no,

@@ -147,7 +147,8 @@ class Strategy:
 | `trade.side` | Direction of the executed trade |
 | `trade.amount_yes` | YES shares that moved |
 | `trade.amount_no` | NO shares that moved |
-| `trade.fee_amount` | Fee you earned on this trade |
+| `trade.fee_yes` | Fee earned in YES tokens (>0 on sell_yes, 0 on buy_yes) |
+| `trade.fee_no` | Fee earned in NO tokens (>0 on buy_yes, 0 on sell_yes) |
 | `trade.reserve_yes` / `reserve_no` | Pool reserves after the trade |
 | `trade.fair_price` | Fair value signal for this trade |
 | `trade.post_spot` | Your AMM's spot price after the trade |

@@ -16,12 +16,9 @@ class PnLTracker:
         """Record each trade's fee contribution and mark-to-market PnL."""
         spot_after = trade.post_spot
 
-        if trade.side == "buy_yes":
-            self.fee_revenue_no += trade.fee_amount   # Fee was in NO
-            self._cumulative_fees_usd += trade.fee_amount * (1.0 - spot_after)
-        else:
-            self.fee_revenue_yes += trade.fee_amount  # Fee was in YES
-            self._cumulative_fees_usd += trade.fee_amount * spot_after
+        self.fee_revenue_yes += trade.fee_yes
+        self.fee_revenue_no += trade.fee_no
+        self._cumulative_fees_usd += trade.fee_yes * spot_after + trade.fee_no * (1.0 - spot_after)
 
         # Mark-to-market PnL: value YES at spot, NO at (1-spot)
         mtm_value = (
@@ -38,7 +35,8 @@ class PnLTracker:
             "side": trade.side,
             "amount_yes": trade.amount_yes,
             "amount_no": trade.amount_no,
-            "fee": trade.fee_amount,
+            "fee_yes": trade.fee_yes,
+            "fee_no": trade.fee_no,
             "fee_rate": fee_rate,
             "fair_price": trade.fair_price,
             "post_spot": trade.post_spot,

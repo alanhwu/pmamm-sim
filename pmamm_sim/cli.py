@@ -59,13 +59,14 @@ def main():
                             help="Output directory for results (default: results)")
         parser.add_argument("--liquidity", type=float, default=10000,
                             help="Initial LP deposit in USDC per market (default: 10000)")
-        parser.add_argument("--include-builtins", action="store_true",
-                            help="Include built-in strategies from STRATEGY_REGISTRY")
+        parser.add_argument("--no-builtins", action="store_true",
+                            help="Exclude built-in strategies from STRATEGY_REGISTRY")
         parser.add_argument("--strategies", type=str, default=None,
                             help="Comma-separated strategy names to run (default: all)")
         parser.add_argument("--fail-fast", action="store_true",
                             help="Stop on first submission load error")
         args = parser.parse_args(sys.argv[2:])
+        args.include_builtins = not args.no_builtins
         _run_compete(args)
     else:
         parser = argparse.ArgumentParser(description="Replay Polymarket trades through a simulated AMM")

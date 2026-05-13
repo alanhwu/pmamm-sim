@@ -33,9 +33,12 @@ PendingTrade fields (available in before_swap):
     normalized_time   0.0 (market open) to 1.0 (resolution)
 
 TradeInfo fields (available in after_swap, or None if skipped):
-    side, amount_yes, amount_no, fee_amount, timestamp,
+    side, amount_yes, amount_no, fee_yes, fee_no, timestamp,
     reserve_yes, reserve_no, time_to_resolution, normalized_time,
     fair_price, post_spot, realized_price
+
+    Fee fields: fee_yes > 0 on sell_yes trades, fee_no > 0 on buy_yes trades.
+    The other is always 0. At resolution, only the winning token's fees have value.
 """
 
 from pmamm_sim.types import FeeQuote, PendingTrade, TradeInfo

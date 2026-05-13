@@ -27,7 +27,8 @@ class TradeInfo:
     side: str                  # "buy_yes" or "sell_yes" (from trader's perspective)
     amount_yes: float          # YES shares traded
     amount_no: float           # NO shares traded
-    fee_amount: float          # Fee collected on this trade (in input token)
+    fee_yes: float             # Fee collected in YES tokens (>0 on sell_yes, 0 on buy_yes)
+    fee_no: float              # Fee collected in NO tokens (>0 on buy_yes, 0 on sell_yes)
     timestamp: int
     reserve_yes: float         # Post-trade YES reserves
     reserve_no: float          # Post-trade NO reserves
