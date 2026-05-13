@@ -31,18 +31,28 @@ flowchart LR
     Gamma --> Fetch
     Dome --> Fetch
   end
-  JSON["trades JSON"]
-  Sim["python -m pmamm_sim"]
-  Fetch --> JSON --> Sim
-  Sim --> Out["PnL / logs / batch results"]
+  JSON["trades JSON + manifest.json"]
+  subgraph sim["Simulation"]
+    Batch["batch sweep"]
+    Compete["compete"]
+  end
+  Fetch --> JSON --> sim
+  sim --> Results["results/"]
+  subgraph ui["Web UI"]
+    Viz["visualizer.html"]
+    Comp["compete.html"]
+  end
+  Results --> ui
+  Submissions["submissions/"] --> Comp
+  Comp --> sim
 ```
 
-| Stage | Input | Output |
+| Command | Input | Output |
 |--------|--------|--------|
-| `fetch_trades.py` | Event URL or slug (`--market`, `--condition-id`, `--output-dir` optional) | `data/trades_<...>.json` by default |
-| `python -m pmamm_sim …` | That JSON (or any compatible file) | Console summary; optional `--export` JSON |
-| `batch` | Folder with `manifest.json` + per-market JSON files | Results under `--results-dir` |
-| `serve` | Prior results + `visualizer.html` | Local HTTP UI |
+| `fetch_trades.py` | Polymarket event URL or slug | `data/trades_<...>.json` |
+| `batch` | `data/` folder with `manifest.json` + trade files | `results/` (per-strategy JSON + index) |
+| `compete` | `submissions/` directory with strategy `.py` files | `results/` + leaderboard |
+| `serve` | Results + HTML files | HTTP server: visualizer + competition UI + API |
 
 The **simulator never calls Dome**; only `fetch_trades.py` needs a `DOME_API_KEY`.
 
