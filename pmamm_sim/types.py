@@ -60,6 +60,20 @@ class SimResult:
     trade_log: list = field(default_factory=list)
 
 
+@dataclass(frozen=True)
+class ArbTrade:
+    """Result of compute_arb_trade — the planned (or executed) arb-optimal trade."""
+    side: str                  # "buy_yes" or "sell_yes"
+    gross_input: float         # Total input from trader (including fee)
+    net_input: float           # Input that enters reserves (after fee)
+    output: float              # Tokens trader receives
+    fee_amount: float          # Fee collected (gross - net), in input token
+    post_spot: float           # AMM spot price after trade
+    trader_profit: float       # Trader's profit at fair price (USD terms)
+    new_reserve_yes: float     # Reserve YES after trade
+    new_reserve_no: float      # Reserve NO after trade
+
+
 @runtime_checkable
 class StrategyProtocol(Protocol):
     """Formal interface for fee strategies.

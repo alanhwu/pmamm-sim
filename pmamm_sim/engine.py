@@ -174,29 +174,28 @@ class SimulationEngine:
 
         # 4. Build TradeInfo for afterSwap
         if side == "buy_yes":
-            amount_yes = result["output"]       # YES out to trader
-            amount_no = result["gross_input"]    # NO in from trader
+            amount_yes = result.output        # YES out to trader
+            amount_no = result.gross_input    # NO in from trader
         else:
-            amount_yes = result["gross_input"]   # YES in from trader
-            amount_no = result["output"]         # NO out to trader
+            amount_yes = result.gross_input   # YES in from trader
+            amount_no = result.output         # NO out to trader
 
         total_tokens = amount_yes + amount_no
         realized_price = amount_no / total_tokens if total_tokens > 0 else 0.0
 
-        fee_amount = result["fee_amount"]
         trade_info = TradeInfo(
             side=side,
             amount_yes=amount_yes,
             amount_no=amount_no,
-            fee_yes=fee_amount if side == "sell_yes" else 0.0,
-            fee_no=fee_amount if side == "buy_yes" else 0.0,
+            fee_yes=result.fee_amount if side == "sell_yes" else 0.0,
+            fee_no=result.fee_amount if side == "buy_yes" else 0.0,
             timestamp=trade.timestamp,
             reserve_yes=amm.reserve_yes,
             reserve_no=amm.reserve_no,
             time_to_resolution=time_to_resolution,
             normalized_time=normalized_time,
             fair_price=fair_price,
-            post_spot=result["post_spot"],
+            post_spot=result.post_spot,
             realized_price=realized_price,
         )
 

@@ -1,5 +1,7 @@
 import math
 
+from pmamm_sim.types import ArbTrade
+
 
 class ConstantProductAMM:
     def __init__(self, initial_liquidity: float, initial_prob: float):
@@ -43,7 +45,7 @@ class ConstantProductAMM:
             + self._initial_reserve_no * (1.0 - self._initial_prob)
         )
 
-    def compute_arb_trade(self, fair_price: float, fee: float) -> dict | None:
+    def compute_arb_trade(self, fair_price: float, fee: float) -> ArbTrade | None:
         """
         Compute the profit-maximizing trade for a rational trader who knows fair_price,
         given the current AMM state and fee level.
@@ -90,17 +92,17 @@ class ConstantProductAMM:
             # Profit: YES gained * fair_yes_usd - NO spent * fair_no_usd
             trader_profit = delta_yes * fair_price - gross_no_in * (1.0 - fair_price)
 
-            return {
-                "side": "buy_yes",
-                "gross_input": gross_no_in,
-                "net_input": net_no_in,
-                "output": delta_yes,
-                "fee_amount": fee_no,
-                "post_spot": post_spot,
-                "trader_profit": trader_profit,
-                "new_reserve_yes": new_reserve_yes,
-                "new_reserve_no": new_reserve_no,
-            }
+            return ArbTrade(
+                side="buy_yes",
+                gross_input=gross_no_in,
+                net_input=net_no_in,
+                output=delta_yes,
+                fee_amount=fee_no,
+                post_spot=post_spot,
+                trader_profit=trader_profit,
+                new_reserve_yes=new_reserve_yes,
+                new_reserve_no=new_reserve_no,
+            )
 
         else:
             # Case 2: Sell YES — trader gives YES, receives NO
@@ -129,19 +131,19 @@ class ConstantProductAMM:
             post_spot = new_reserve_no / (new_reserve_yes + new_reserve_no)
             trader_profit = delta_no * (1.0 - fair_price) - gross_yes_in * fair_price
 
-            return {
-                "side": "sell_yes",
-                "gross_input": gross_yes_in,
-                "net_input": net_yes_in,
-                "output": delta_no,
-                "fee_amount": fee_yes,
-                "post_spot": post_spot,
-                "trader_profit": trader_profit,
-                "new_reserve_yes": new_reserve_yes,
-                "new_reserve_no": new_reserve_no,
-            }
+            return ArbTrade(
+                side="sell_yes",
+                gross_input=gross_yes_in,
+                net_input=net_yes_in,
+                output=delta_no,
+                fee_amount=fee_yes,
+                post_spot=post_spot,
+                trader_profit=trader_profit,
+                new_reserve_yes=new_reserve_yes,
+                new_reserve_no=new_reserve_no,
+            )
 
-    def execute_arb(self, fair_price: float, fee: float) -> dict | None:
+    def execute_arb(self, fair_price: float, fee: float) -> ArbTrade | None:
         """
         Compute and execute the arb-optimal trade in one step.
         Returns None if no trade (inside no-arb band).
@@ -150,14 +152,14 @@ class ConstantProductAMM:
         if plan is None:
             return None
 
-        self.reserve_yes = plan["new_reserve_yes"]
-        self.reserve_no = plan["new_reserve_no"]
+        self.reserve_yes = plan.new_reserve_yes
+        self.reserve_no = plan.new_reserve_no
 
         # Accumulate fees in the input token
-        if plan["side"] == "buy_yes":
-            self.accumulated_fees_no += plan["fee_amount"]   # Fee was in NO
+        if plan.side == "buy_yes":
+            self.accumulated_fees_no += plan.fee_amount   # Fee was in NO
         else:
-            self.accumulated_fees_yes += plan["fee_amount"]  # Fee was in YES
+            self.accumulated_fees_yes += plan.fee_amount  # Fee was in YES
 
         self._check_invariant()
         return plan
