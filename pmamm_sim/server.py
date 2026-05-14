@@ -12,10 +12,11 @@ See also the WARNING printed by the CLI compete/serve commands.
 import ast
 import json
 import re
+import subprocess
+import sys
 from http.server import SimpleHTTPRequestHandler
 from pathlib import Path
 
-from pmamm_sim.batch import run_full_sweep
 from pmamm_sim.loader import load_submissions
 from pmamm_sim.sandbox import validate_code_safety
 
@@ -38,6 +39,7 @@ class CompetitionHandler(SimpleHTTPRequestHandler):
     submissions_dir: str = "submissions"
     liquidity: float = 10_000
     include_builtins: bool = False
+    run_timeout: int = 120  # Max seconds for a sweep run
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, directory=self.serve_root, **kwargs)
@@ -184,27 +186,43 @@ class CompetitionHandler(SimpleHTTPRequestHandler):
         filepath = sdir / f"{safe_name}.py"
         filepath.write_text(file_content)
 
-        # Run the full sweep with all submissions
+        # Run the sweep in a subprocess with timeout
         try:
-            entries, errors = load_submissions(sdir)
-            if not entries and not self.include_builtins:
-                self._send_json({"error": "No valid strategies to run"}, 400)
+            cmd = [
+                sys.executable, "-m", "pmamm_sim", "compete",
+                str(sdir),
+                "--data-folder", self.data_folder,
+                "--results-dir", self.results_dir,
+                "--liquidity", str(self.liquidity),
+            ]
+            if not self.include_builtins:
+                cmd.append("--no-builtins")
+
+            result = subprocess.run(
+                cmd, capture_output=True, text=True,
+                timeout=self.run_timeout,
+            )
+
+            if result.returncode != 0:
+                # Extract a useful error from stderr
+                err_msg = result.stderr.strip().split("\n")[-1] if result.stderr else "Unknown error"
+                self._send_json({
+                    "error": f"Run failed: {err_msg}",
+                }, 500)
                 return
 
-            run_full_sweep(
-                data_folder=self.data_folder,
-                results_dir=self.results_dir,
-                liquidity=self.liquidity,
-                extra_strategies=entries if entries else None,
-                include_builtins=self.include_builtins,
-            )
+        except subprocess.TimeoutExpired:
+            self._send_json({
+                "error": f"Run timed out after {self.run_timeout}s. "
+                         f"Your strategy may be too slow.",
+            }, 400)
+            return
         except Exception as e:
             self._send_json({"error": f"Run failed: {e}"}, 500)
             return
 
         # Return the leaderboard
-        load_errors = [{"filename": e.filename, "reason": e.reason} for e in errors]
-        self._handle_leaderboard_with_extras(submitted_name=name, load_errors=load_errors)
+        self._handle_leaderboard_with_extras(submitted_name=name, load_errors=[])
 
     def _handle_leaderboard_with_extras(self, submitted_name, load_errors):
         """Return leaderboard JSON after a submission, with extra metadata."""
