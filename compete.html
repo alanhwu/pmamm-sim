@@ -117,7 +117,7 @@
     padding: 6px 12px; border-bottom: 1px solid #334155;
   }
   .lb-table th.num { text-align: right; }
-  .lb-table td { padding: 10px 12px; border-bottom: 1px solid #1e293b; }
+  .lb-table td { padding: 10px 12px; border-bottom: 1px solid #1e293b; vertical-align: top; }
   .lb-table td.num { text-align: right; font-variant-numeric: tabular-nums; }
   .lb-table tr:hover td { background: rgba(30,41,59,.5); }
   .lb-table tr.highlight td { background: rgba(99,102,241,.12); }
@@ -130,6 +130,24 @@
   .green { color: #4ade80; }
   .red { color: #f87171; }
   .strat-name { font-weight: 600; color: #e2e8f0; }
+
+  .info-tip {
+    display: inline-flex; align-items: center; justify-content: center;
+    width: 13px; height: 13px;
+    font-size: 9px; font-weight: 600; font-style: normal;
+    color: #475569; border: 1px solid #334155; border-radius: 50%;
+    cursor: help; position: relative; margin-left: 3px; vertical-align: baseline;
+  }
+  .info-tip:hover { color: #94a3b8; border-color: #64748b; }
+  .info-tip .tip-text {
+    display: none; position: absolute; top: 20px; right: -8px;
+    background: #1e293b; border: 1px solid #475569; border-radius: 6px;
+    padding: 8px 10px; font-size: 12px; font-weight: 400; color: #cbd5e1;
+    white-space: normal; width: 240px; text-align: left; z-index: 10;
+    line-height: 1.4; text-transform: none; letter-spacing: 0;
+    box-shadow: 0 4px 12px rgba(0,0,0,.3);
+  }
+  .info-tip:hover .tip-text { display: block; }
 
   .lb-empty {
     text-align: center; padding: 48px 20px; color: #475569; font-size: 14px;
@@ -380,7 +398,7 @@ function buildTable(sorted, allStrategies, markets, scoreMode, category) {
   let html = '<table class="lb-table"><thead><tr>';
   html += '<th>Rank</th><th>Strategy</th><th>Author</th>';
   html += `<th class="num">${category ? 'Avg Return' : 'Score'}</th>`;
-  html += '<th class="num">Skip Rate</th>';
+  html += '<th class="num">Skip Rate <span class="info-tip">i<span class="tip-text">Fraction of price signals that fell inside the no-arbitrage band and did not induce a trade. Higher fees widen the band, increasing skip rate. A 90% skip rate means only 10% of price moves were large enough to induce a trade.</span></span></th>';
   html += '<th></th>';
   html += '</tr></thead><tbody>';
 
@@ -420,7 +438,7 @@ function buildTable(sorted, allStrategies, markets, scoreMode, category) {
     html += `<td style="color:#94a3b8;font-size:12px">${esc(s.author || '')}</td>`;
     html += `<td class="num ${retClass}">${scoreStr}</td>`;
     html += `<td class="num">${(s.avg_skip_rate * 100).toFixed(1)}%</td>`;
-    html += `<td><button class="expand-btn" data-detail="${detailId}">details</button></td>`;
+    html += `<td style="text-align:center"><button class="expand-btn" data-detail="${detailId}">details</button></td>`;
     html += '</tr>';
 
     // Detail row
