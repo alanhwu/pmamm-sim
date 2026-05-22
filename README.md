@@ -27,7 +27,7 @@ flowchart LR
   subgraph ingest["Data ingest"]
     Gamma["Polymarket Gamma API"]
     Dome["Dome API"]
-    Fetch["fetch_trades.py"]
+    Fetch["utils/fetch_trades.py"]
     Gamma --> Fetch
     Dome --> Fetch
   end
@@ -49,12 +49,12 @@ flowchart LR
 
 | Command | Input | Output |
 |--------|--------|--------|
-| `fetch_trades.py` | Polymarket event URL or slug | `data/trades_<...>.json` |
+| `utils/fetch_trades.py` | Polymarket event URL or slug | `data/trades_<...>.json` |
 | `batch` | `data/` folder with `manifest.json` + trade files | `results/` (per-strategy JSON + index) |
 | `compete` | `submissions/` directory with strategy `.py` files | `results/` + leaderboard |
 | `serve` | Results + HTML files | HTTP server: visualizer + competition UI + API |
 
-The **simulator never calls Dome**; only `fetch_trades.py` needs a `DOME_API_KEY`.
+The **simulator never calls Dome**; only `utils/fetch_trades.py` needs a `DOME_API_KEY`.
 
 ---
 
@@ -76,7 +76,8 @@ The **simulator never calls Dome**; only `fetch_trades.py` needs a `DOME_API_KEY
 
 | Path | Role |
 |------|------|
-| `fetch_trades.py` | CLI to resolve markets and download + normalize Dome orders |
+| `utils/fetch_trades.py` | CLI to resolve markets and download + normalize Dome orders |
+| `utils/bulk_fetch.py` | Bulk-fetch markets from a CSV and add to manifest |
 | `pmamm_sim/amm.py` | Constant-product math and arb trade construction |
 | `pmamm_sim/engine.py` | Replay loop, single run vs test-vs-baseline replay |
 | `pmamm_sim/pnl.py` | Fee accounting and terminal valuation at resolution |
@@ -107,7 +108,7 @@ Python 3.10+ recommended.
 pip install -r requirements.txt
 ```
 
-### Dome API key (`fetch_trades.py` only)
+### Dome API key (`utils/fetch_trades.py` only)
 
 1. Copy the example env file and add your key:
 
@@ -126,8 +127,8 @@ Running **`python -m pmamm_sim`** only needs JSON files on disk — **no** `DOME
 ### Fetch trades
 
 ```bash
-python fetch_trades.py "https://polymarket.com/event/<slug>"
-# Optional: python fetch_trades.py <slug> [--market <substring>] [--condition-id <0x…>] [-o DIR]
+python utils/fetch_trades.py "https://polymarket.com/event/<slug>"
+# Optional: python utils/fetch_trades.py <slug> [--market <substring>] [--condition-id <0x…>] [-o DIR]
 ```
 
 Writes `data/trades_<...>.json` by default so the repo root stays clean and new market files follow the same convention as the committed dataset. Override with `--output-dir` / `-o` if you want to write somewhere else. Add new datasets to `data/manifest.json` when you want them included in batch/visualizer runs.
@@ -192,8 +193,8 @@ Submissions are sandboxed — only safe stdlib modules and `pmamm_sim.types` can
 
 ## Further reading in code
 
-- Normalization from Dome → YES/USDC: `fetch_trades.py` (`normalize_trade`, etc.).
+- Normalization from Dome → YES/USDC: `utils/fetch_trades.py` (`normalize_trade`, etc.).
 - Why trades are grouped by `tx_hash` and volume is halved: docstring in `pmamm_sim/data_loader.py`.
 - Full strategy list for batch sweeps: `STRATEGY_REGISTRY` in `pmamm_sim/strategies.py`.
 
-For all CLI flags: `python -m pmamm_sim --help`, `python fetch_trades.py --help`.
+For all CLI flags: `python -m pmamm_sim --help`, `python utils/fetch_trades.py --help`.

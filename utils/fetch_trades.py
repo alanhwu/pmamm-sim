@@ -29,8 +29,8 @@ from urllib.parse import urlparse
 import requests
 from dotenv import load_dotenv
 
-# Load `.env` from the repository root (same directory as this script).
-_REPO_ROOT = Path(__file__).resolve().parent
+# Load `.env` from the repository root (parent of utils/).
+_REPO_ROOT = Path(__file__).resolve().parent.parent
 load_dotenv(_REPO_ROOT / ".env")
 
 # ── API config ──────────────────────────────────────────────────────────────
