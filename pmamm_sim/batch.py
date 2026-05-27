@@ -1,6 +1,7 @@
 import json
 import os
 import re
+from concurrent.futures import ProcessPoolExecutor
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -21,6 +22,69 @@ def sanitize_filename(name: str) -> str:
     return f"strategy_{cleaned}"
 
 
+def _run_one_market(args: tuple) -> dict:
+    """Worker function: run one strategy against one market.
+
+    Loads trade data from disk and writes per-market results to disk,
+    avoiding pickling large trade lists across processes.
+    """
+    strat_cls, strat_kwargs, trade_file, liquidity, outcome, question, category, output_path = args
+
+    from pmamm_sim.data_loader import load_polymarket_trades
+
+    trades, metadata = load_polymarket_trades(trade_file)
+    if not trades:
+        return None
+
+    initial_prob = max(0.001, min(0.999, trades[0].yes_price))
+    market_start = trades[0].timestamp
+    market_end = trades[-1].timestamp
+
+    engine = SimulationEngine()
+    strategy = strat_cls(**strat_kwargs)
+
+    result = engine.run_single(
+        trades=trades,
+        strategy=strategy,
+        initial_liquidity=liquidity,
+        initial_prob=initial_prob,
+        outcome=outcome,
+        market_start=market_start,
+        market_end=market_end,
+    )
+
+    market_result = {
+        "question": question,
+        "summary": {
+            "fee_revenue": result.fee_revenue,
+            "resolution_pnl": result.resolution_pnl,
+            "total_pnl": result.total_pnl,
+            "return_on_liquidity": result.return_on_liquidity,
+            "num_trades_executed": result.num_trades,
+            "num_trades_skipped": result.num_trades_skipped,
+            "skip_rate": result.skip_rate,
+        },
+        "trades": result.trade_log,
+    }
+
+    # Write per-market file in the worker (parallel writes)
+    if output_path:
+        with open(output_path, "w") as f:
+            json.dump(market_result, f)
+
+    # Return only the summary (no trade log) to the main process
+    return {
+        "question": question,
+        "category": category,
+        "return_on_liquidity": result.return_on_liquidity,
+        "fee_revenue": result.fee_revenue,
+        "total_pnl": result.total_pnl,
+        "num_trades_executed": result.num_trades,
+        "num_trades_skipped": result.num_trades_skipped,
+        "skip_rate": result.skip_rate,
+    }
+
+
 def run_full_sweep(
     data_folder: str | Path,
     results_dir: str | Path,
@@ -28,6 +92,7 @@ def run_full_sweep(
     strategy_filter: set[str] | None = None,
     extra_strategies: list[dict] | None = None,
     include_builtins: bool = True,
+    max_workers: int | None = None,
 ):
     """Sweep all strategies across all markets, write per-strategy files + index.json."""
     data_folder = Path(data_folder)
@@ -35,7 +100,6 @@ def run_full_sweep(
     results_dir.mkdir(parents=True, exist_ok=True)
 
     manifest = load_manifest(data_folder / "manifest.json")
-    engine = SimulationEngine()
 
     strategies = list(STRATEGY_REGISTRY) if include_builtins else []
     if extra_strategies:
@@ -53,26 +117,28 @@ def run_full_sweep(
         print("No strategies to run.")
         return
 
-    num_markets = len(manifest["markets"])
-    print(f"\n=== Strategy Sweep: {len(strategies)} strategies x {num_markets} markets ===")
-    print(f"Liquidity: ${liquidity:,.0f} per market\n")
-
-    # Load all trade data once (shared across strategies)
-    market_data = []
+    # Load metadata for the index (lightweight — just need trade counts and initial probs)
+    market_specs = []
     for spec in manifest["markets"]:
-        trades, metadata = load_polymarket_trades(str(data_folder / spec["file"]))
+        trade_file = str(data_folder / spec["file"])
+        trades, metadata = load_polymarket_trades(trade_file)
         initial_prob = spec.get("initial_prob", trades[0].yes_price if trades else 0.5)
         initial_prob = max(0.001, min(0.999, initial_prob))
         market_start = spec.get("market_start", trades[0].timestamp if trades else 0)
         market_end = spec.get("market_end", trades[-1].timestamp if trades else 1)
-        market_data.append({
+        market_specs.append({
             "spec": spec,
-            "trades": trades,
+            "trade_file": trade_file,
+            "has_trades": len(trades) > 0,
             "metadata": metadata,
             "initial_prob": initial_prob,
             "market_start": market_start,
             "market_end": market_end,
         })
+
+    num_markets = len(manifest["markets"])
+    print(f"\n=== Strategy Sweep: {len(strategies)} strategies x {num_markets} markets ===")
+    print(f"Liquidity: ${liquidity:,.0f} per market\n")
 
     # Build index skeleton
     index = {
@@ -87,79 +153,77 @@ def run_full_sweep(
         "aggregate": {},
     }
 
-    # Populate markets list in index (shared across all strategies)
-    for md in market_data:
+    for ms in market_specs:
         index["markets"].append({
-            "question": md["spec"]["question"],
-            "outcome": md["spec"]["outcome"],
-            "category": md["spec"].get("category", "other"),
-            "num_trades": md["metadata"]["total_collapsed_trades"],
-            "initial_prob": md["initial_prob"],
-            "market_start": md["market_start"],
-            "market_end": md["market_end"],
+            "question": ms["spec"]["question"],
+            "outcome": ms["spec"]["outcome"],
+            "category": ms["spec"].get("category", "other"),
+            "num_trades": ms["metadata"]["total_collapsed_trades"],
+            "initial_prob": ms["initial_prob"],
+            "market_start": ms["market_start"],
+            "market_end": ms["market_end"],
         })
 
     file_sizes = {}
+    use_parallel = num_markets > 10
 
     for strat_spec in strategies:
         strat_name = strat_spec["name"]
         strat_cls = strat_spec["class"]
         strat_kwargs = strat_spec["kwargs"]
 
-        strategy_markets = []
-        per_market_agg = []
+        # Per-strategy output directory for per-market files
+        strat_dir_name = sanitize_filename(strat_name)
+        strat_dir = results_dir / strat_dir_name
+        strat_dir.mkdir(parents=True, exist_ok=True)
 
-        for md in market_data:
-            if not md["trades"]:
+        # Build task args for each market
+        tasks = []
+        for i, ms in enumerate(market_specs):
+            if not ms["has_trades"]:
                 continue
+            market_output = str(strat_dir / f"market_{i:04d}.json")
+            tasks.append((
+                strat_cls, strat_kwargs,
+                ms["trade_file"], liquidity,
+                ms["spec"]["outcome"],
+                ms["spec"]["question"], ms["spec"].get("category", "other"),
+                market_output,
+            ))
 
-            # Fresh strategy instance per market
-            strategy = strat_cls(**strat_kwargs)
+        # Run markets in parallel or sequential
+        if use_parallel:
+            with ProcessPoolExecutor(max_workers=max_workers) as pool:
+                results = list(pool.map(_run_one_market, tasks))
+        else:
+            results = [_run_one_market(t) for t in tasks]
 
-            result = engine.run_single(
-                trades=md["trades"],
-                strategy=strategy,
-                initial_liquidity=liquidity,
-                initial_prob=md["initial_prob"],
-                outcome=md["spec"]["outcome"],
-                market_start=md["market_start"],
-                market_end=md["market_end"],
-            )
+        per_market_agg = [r for r in results if r is not None]
 
-            total_signals = result.num_trades + result.num_trades_skipped
-
-            strategy_markets.append({
-                "question": md["spec"]["question"],
+        # Write strategy index (lightweight — points to per-market files)
+        market_files = []
+        for i, r in enumerate(results):
+            if r is None:
+                continue
+            market_files.append({
+                "question": r["question"],
+                "file": f"market_{i:04d}.json",
                 "summary": {
-                    "fee_revenue": result.fee_revenue,
-                    "resolution_pnl": result.resolution_pnl,
-                    "total_pnl": result.total_pnl,
-                    "return_on_liquidity": result.return_on_liquidity,
-                    "num_trades_executed": result.num_trades,
-                    "num_trades_skipped": result.num_trades_skipped,
-                    "skip_rate": result.skip_rate,
+                    "fee_revenue": r["fee_revenue"],
+                    "resolution_pnl": 0,
+                    "total_pnl": r["total_pnl"],
+                    "return_on_liquidity": r["return_on_liquidity"],
+                    "num_trades_executed": r["num_trades_executed"],
+                    "num_trades_skipped": r["num_trades_skipped"],
+                    "skip_rate": r["skip_rate"],
                 },
-                "trades": result.trade_log,
             })
 
-            per_market_agg.append({
-                "question": md["spec"]["question"],
-                "category": md["spec"].get("category", "other"),
-                "return_on_liquidity": result.return_on_liquidity,
-                "fee_revenue": result.fee_revenue,
-                "total_pnl": result.total_pnl,
-                "num_trades_executed": result.num_trades,
-                "num_trades_skipped": result.num_trades_skipped,
-                "skip_rate": result.skip_rate,
-            })
-
-        # Write per-strategy file
-        filename = sanitize_filename(strat_name) + ".json"
-        filepath = results_dir / filename
-        with open(filepath, "w") as f:
-            json.dump({"strategy_name": strat_name, "markets": strategy_markets}, f)
-        fsize = os.path.getsize(filepath)
-        file_sizes[filename] = fsize
+        strat_index_path = results_dir / (strat_dir_name + ".json")
+        with open(strat_index_path, "w") as f:
+            json.dump({"strategy_name": strat_name, "markets": market_files}, f)
+        fsize = os.path.getsize(strat_index_path)
+        file_sizes[strat_dir_name + ".json"] = fsize
 
         # Aggregate for index
         n = len(per_market_agg)
@@ -178,7 +242,7 @@ def run_full_sweep(
         category_score = sum(cat_avgs.values()) / len(cat_avgs) if cat_avgs else 0.0
 
         index["strategies"].append(strat_name)
-        index["strategy_files"][strat_name] = filename
+        index["strategy_files"][strat_name] = strat_dir_name + ".json"
         index["aggregate"][strat_name] = {
             "author": strat_spec.get("author", ""),
             "avg_return": avg_ret,

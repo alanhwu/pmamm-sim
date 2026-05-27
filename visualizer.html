@@ -225,15 +225,42 @@ let stratA = '';                // currently selected strategy A name
 let stratB = '';                // currently selected strategy B name
 let activeCharts = [];          // Chart instances to destroy on re-render
 
-/* ── fetch a strategy file, with caching ─────────────────── */
+/* ── fetch a strategy index file, with caching ──────────── */
 async function ensureStrategy(name) {
   if (strategyCache[name]) return strategyCache[name];
   const filename = INDEX.strategy_files[name];
   const resp = await fetch('results/' + filename);
   if (!resp.ok) throw new Error('Failed to load ' + filename);
   const data = await resp.json();
+  // Cache for per-market trade data (lazy-loaded)
+  data._tradeCache = {};
   strategyCache[name] = data;
   return data;
+}
+
+/* ── lazy-load per-market trade data ────────────────────── */
+async function ensureMarketTrades(stratName, marketIdx) {
+  const data = strategyCache[stratName];
+  if (!data) return [];
+  if (data._tradeCache[marketIdx]) return data._tradeCache[marketIdx];
+
+  const mkt = data.markets[marketIdx];
+  if (!mkt) return [];
+
+  // New format: trades in separate file
+  if (mkt.file) {
+    const stratFile = INDEX.strategy_files[stratName];
+    const stratDir = stratFile.replace('.json', '');
+    const resp = await fetch('results/' + stratDir + '/' + mkt.file);
+    if (!resp.ok) return [];
+    const marketData = await resp.json();
+    data._tradeCache[marketIdx] = marketData.trades || [];
+    return data._tradeCache[marketIdx];
+  }
+
+  // Legacy format: trades inline
+  data._tradeCache[marketIdx] = mkt.trades || [];
+  return data._tradeCache[marketIdx];
 }
 
 /* ── render aggregate stats bar ──────────────────────────── */
@@ -312,24 +339,19 @@ async function renderDashboard() {
     `<span>Initial prob: ${(mkt.initial_prob * 100).toFixed(1)}%</span>`,
   ].join('');
 
-  /* show loading if strategies not cached yet */
-  const needsA = !strategyCache[stratA];
-  const needsB = !strategyCache[stratB];
-  if (needsA || needsB) setChartLoading(true);
-
+  /* load strategy indexes */
   const [dataA, dataB] = await Promise.all([ensureStrategy(stratA), ensureStrategy(stratB)]);
-  setChartLoading(false);
 
   const mktA = dataA.markets[mi];
   const mktB = dataB.markets[mi];
 
-  /* cards */
+  /* cards (from summaries — no trade data needed) */
   const delta = mktA.summary.return_on_liquidity - mktB.summary.return_on_liquidity;
   const deltaClass = delta >= 0 ? 'green' : 'red';
   const skipA = mktA.summary.skip_rate != null ? mktA.summary.skip_rate : 0;
   const skipB = mktB.summary.skip_rate != null ? mktB.summary.skip_rate : 0;
-  const execA = mktA.summary.num_trades_executed || mktA.trades.length;
-  const execB = mktB.summary.num_trades_executed || mktB.trades.length;
+  const execA = mktA.summary.num_trades_executed || 0;
+  const execB = mktB.summary.num_trades_executed || 0;
   const pnlA = mktA.summary.total_pnl;
   const pnlB = mktB.summary.total_pnl;
   const feeRevA = mktA.summary.fee_revenue;
@@ -353,9 +375,16 @@ async function renderDashboard() {
   activeCharts.forEach(c => c.destroy());
   activeCharts = [];
 
-  /* downsample each strategy's trades independently, then align by normalized_time */
-  const tradesA = downsample(mktA.trades, 800);
-  const tradesB = downsample(mktB.trades, 800);
+  /* lazy-load per-market trade data */
+  setChartLoading(true);
+  const [rawTradesA, rawTradesB] = await Promise.all([
+    ensureMarketTrades(stratA, mi),
+    ensureMarketTrades(stratB, mi),
+  ]);
+  setChartLoading(false);
+
+  const tradesA = downsample(rawTradesA, 800);
+  const tradesB = downsample(rawTradesB, 800);
 
   function xyFrom(arr, fn) { return arr.map(t => ({ x: t.normalized_time, y: fn(t) })); }
 
@@ -455,6 +484,7 @@ async function renderDashboard() {
       },
     },
   }));
+
 }
 
 /* ── full re-render (called when dropdowns change) ───────── */
