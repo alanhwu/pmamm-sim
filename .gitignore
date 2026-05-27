@@ -7,6 +7,8 @@ __pycache__/
 
 *.pem
 
+ob_cache/
+
 results.json
 results/
 

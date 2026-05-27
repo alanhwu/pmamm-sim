@@ -64,12 +64,12 @@ def main():
         slug = fname.replace("trades_", "").replace(".json", "")
         existing_slugs.add(slug)
 
-    # Read CSV
+    # Read CSV (reversed — start from the bottom)
     with open(args.csv_file) as f:
         reader = csv.DictReader(f)
-        rows = list(reader)
+        rows = list(reversed(list(reader)))
 
-    print(f"CSV has {len(rows)} markets")
+    print(f"CSV has {len(rows)} markets (processing bottom-up)")
     print()
 
     fetched = 0
@@ -111,11 +111,16 @@ def main():
             fetched += 1
             continue
 
-        # Run fetch_trades.py
+        # Run fetch_trades.py — use condition_id if available (skips Gamma lookup)
+        condition_id = row.get("condition_id", "").strip()
+        fetch_script = str(Path(__file__).parent / "fetch_trades.py")
+        if condition_id:
+            cmd = [sys.executable, fetch_script, "--condition-id", condition_id, "--output-dir", str(output_dir)]
+        else:
+            cmd = [sys.executable, fetch_script, slug, "--output-dir", str(output_dir)]
         try:
             result = subprocess.run(
-                [sys.executable, str(Path(__file__).parent / "fetch_trades.py"), slug, "--output-dir", str(output_dir)],
-                capture_output=True, text=True, timeout=300,
+                cmd, capture_output=True, text=True, timeout=300,
             )
             if result.returncode != 0:
                 print(f"  ERROR {slug}: {result.stderr.strip().split(chr(10))[-1]}")
@@ -126,16 +131,21 @@ def main():
             errors += 1
             continue
 
-        # Find the output file
+        # Find the output file — try slug first, then condition_id prefix
+        existing_files = {m["file"] for m in manifest["markets"]}
         trade_file = None
-        for f in output_dir.glob(f"trades_*{slug}*.json"):
-            trade_file = f
-            break
+        for pattern in [f"trades_*{slug}*.json", f"trades_{condition_id[:16]}*.json"]:
+            for f in output_dir.glob(pattern):
+                if f.name not in existing_files:
+                    trade_file = f
+                    break
+            if trade_file:
+                break
 
         if trade_file is None:
-            # Try the sanitized name from fetch output
-            for f in output_dir.glob("trades_*.json"):
-                if f.name not in {m["file"] for m in manifest["markets"]}:
+            # Last resort: any new file not in manifest
+            for f in sorted(output_dir.glob("trades_*.json"), key=lambda p: p.stat().st_mtime, reverse=True):
+                if f.name not in existing_files:
                     trade_file = f
                     break
 
