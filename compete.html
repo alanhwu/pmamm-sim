@@ -328,7 +328,7 @@ function renderLeaderboard(data) {
   let html = '<div class="lb-tabs">';
   html += `<button class="lb-tab active" data-tab="overall">Overall<span class="tab-count">${nMarkets}</span></button>`;
   categories.forEach(cat => {
-    const label = cat.charAt(0).toUpperCase() + cat.slice(1);
+    const label = cat.split('_').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ');
     html += `<button class="lb-tab" data-tab="${esc(cat)}">${esc(label)}<span class="tab-count">${catCounts[cat]}</span></button>`;
   });
   html += '</div>';
