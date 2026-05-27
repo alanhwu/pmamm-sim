@@ -154,14 +154,16 @@ def run_full_sweep(
     }
 
     for ms in market_specs:
+        hidden = ms["spec"].get("hidden", False)
         index["markets"].append({
-            "question": ms["spec"]["question"],
+            "question": "Hidden Market" if hidden else ms["spec"]["question"],
             "outcome": ms["spec"]["outcome"],
             "category": ms["spec"].get("category", "other"),
+            "hidden": hidden,
             "num_trades": ms["metadata"]["total_collapsed_trades"],
             "initial_prob": ms["initial_prob"],
-            "market_start": ms["market_start"],
-            "market_end": ms["market_end"],
+            "market_start": ms["market_start"] if not hidden else 0,
+            "market_end": ms["market_end"] if not hidden else 0,
         })
 
     file_sizes = {}
@@ -182,12 +184,14 @@ def run_full_sweep(
         for i, ms in enumerate(market_specs):
             if not ms["has_trades"]:
                 continue
-            market_output = str(strat_dir / f"market_{i:04d}.json")
+            hidden = ms["spec"].get("hidden", False)
+            market_output = None if hidden else str(strat_dir / f"market_{i:04d}.json")
+            question = "Hidden Market" if hidden else ms["spec"]["question"]
             tasks.append((
                 strat_cls, strat_kwargs,
                 ms["trade_file"], liquidity,
                 ms["spec"]["outcome"],
-                ms["spec"]["question"], ms["spec"].get("category", "other"),
+                question, ms["spec"].get("category", "other"),
                 market_output,
             ))
 
@@ -201,13 +205,19 @@ def run_full_sweep(
         per_market_agg = [r for r in results if r is not None]
 
         # Write strategy index (lightweight — points to per-market files)
+        # Hidden markets get summary but no file pointer (no trade data to drill into)
         market_files = []
-        for i, r in enumerate(results):
+        task_idx = 0
+        for i, ms in enumerate(market_specs):
+            if not ms["has_trades"]:
+                continue
+            r = results[task_idx]
+            task_idx += 1
             if r is None:
                 continue
-            market_files.append({
+            hidden = ms["spec"].get("hidden", False)
+            entry = {
                 "question": r["question"],
-                "file": f"market_{i:04d}.json",
                 "summary": {
                     "fee_revenue": r["fee_revenue"],
                     "resolution_pnl": 0,
@@ -217,7 +227,10 @@ def run_full_sweep(
                     "num_trades_skipped": r["num_trades_skipped"],
                     "skip_rate": r["skip_rate"],
                 },
-            })
+            }
+            if not hidden:
+                entry["file"] = f"market_{i:04d}.json"
+            market_files.append(entry)
 
         strat_index_path = results_dir / (strat_dir_name + ".json")
         with open(strat_index_path, "w") as f:

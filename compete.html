@@ -445,18 +445,24 @@ function buildTable(sorted, allStrategies, markets, scoreMode, category) {
     html += `<td style="text-align:center"><button class="expand-btn" data-detail="${detailId}">details</button></td>`;
     html += '</tr>';
 
-    // Detail row
+    // Detail row — visible markets first, hidden at bottom
     if (detailMarkets.length > 0) {
+      const sortedMarkets = [...detailMarkets].sort((a, b) => {
+        const aHidden = a.question === 'Hidden Market' ? 1 : 0;
+        const bHidden = b.question === 'Hidden Market' ? 1 : 0;
+        return aHidden - bHidden;
+      });
       html += `<tr class="market-detail" id="${detailId}"><td colspan="6">`;
       html += '<div class="market-detail-scroll"><div class="market-grid">';
       html += '<div style="font-weight:600;color:#64748b">Market</div>';
       html += '<div style="font-weight:600;color:#64748b;text-align:right">Return</div>';
       html += '<div style="font-weight:600;color:#64748b;text-align:right">Fees</div>';
       html += '<div style="font-weight:600;color:#64748b;text-align:right">Skip</div>';
-      detailMarkets.forEach(m => {
+      sortedMarkets.forEach(m => {
         const mRetClass = m.return_on_liquidity >= 0 ? 'green' : 'red';
         const q = m.question || 'Unknown';
-        html += `<div class="mkt-name" title="${esc(q)}">${esc(q)}</div>`;
+        const dimStyle = q === 'Hidden Market' ? ' style="color:#475569"' : '';
+        html += `<div class="mkt-name"${dimStyle} title="${esc(q)}">${esc(q)}</div>`;
         html += `<div style="text-align:right" class="${mRetClass}">${fmtPct(m.return_on_liquidity)}</div>`;
         html += `<div style="text-align:right">${fmtUsd(m.fee_revenue)}</div>`;
         html += `<div style="text-align:right">${(m.skip_rate * 100).toFixed(1)}%</div>`;
