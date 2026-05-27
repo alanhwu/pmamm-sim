@@ -27,8 +27,12 @@ def _run_one_market(args: tuple) -> dict:
 
     Loads trade data from disk and writes per-market results to disk,
     avoiding pickling large trade lists across processes.
+
+    Strategy is specified as either:
+      - (class, kwargs) for built-in strategies (picklable)
+      - (source_path, kwargs) for submissions (loaded from file in-worker)
     """
-    strat_cls, strat_kwargs, trade_file, liquidity, outcome, question, category, output_path = args
+    strat_spec, strat_kwargs, trade_file, liquidity, outcome, question, category, output_path = args
 
     from pmamm_sim.data_loader import load_polymarket_trades
 
@@ -40,8 +44,16 @@ def _run_one_market(args: tuple) -> dict:
     market_start = trades[0].timestamp
     market_end = trades[-1].timestamp
 
+    # Load strategy: either a class directly or a file path to load from
+    if isinstance(strat_spec, str):
+        from pmamm_sim.loader import load_submission
+        from pathlib import Path
+        entry = load_submission(Path(strat_spec))
+        strategy = entry["class"](**strat_kwargs)
+    else:
+        strategy = strat_spec(**strat_kwargs)
+
     engine = SimulationEngine()
-    strategy = strat_cls(**strat_kwargs)
 
     result = engine.run_single(
         trades=trades,
@@ -173,6 +185,9 @@ def run_full_sweep(
         strat_name = strat_spec["name"]
         strat_cls = strat_spec["class"]
         strat_kwargs = strat_spec["kwargs"]
+        # For submissions (dynamically loaded), pass file path instead of class
+        # so workers can load it themselves (avoids pickle issues)
+        strat_ref = strat_spec.get("source", strat_cls)
 
         # Per-strategy output directory for per-market files
         strat_dir_name = sanitize_filename(strat_name)
@@ -188,7 +203,7 @@ def run_full_sweep(
             market_output = None if hidden else str(strat_dir / f"market_{i:04d}.json")
             question = "Hidden Market" if hidden else ms["spec"]["question"]
             tasks.append((
-                strat_cls, strat_kwargs,
+                strat_ref, strat_kwargs,
                 ms["trade_file"], liquidity,
                 ms["spec"]["outcome"],
                 question, ms["spec"].get("category", "other"),
