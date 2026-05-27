@@ -227,10 +227,14 @@ def _run_batch(args):
 
 def _run_serve(args):
     import http.server
-    from pmamm_sim.server import CompetitionHandler
+    from pmamm_sim.server import CompetitionHandler, preload_market_data
 
     # Serve from project root so both visualizer.html and results/ are accessible
     root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+
+    # Preload all market data once at startup
+    print("Loading market data...")
+    manifest, market_specs = preload_market_data(args.data_folder)
 
     CompetitionHandler.serve_root = root
     CompetitionHandler.data_folder = args.data_folder
@@ -238,6 +242,8 @@ def _run_serve(args):
     CompetitionHandler.submissions_dir = args.submissions_dir
     CompetitionHandler.liquidity = args.liquidity
     CompetitionHandler.include_builtins = args.include_builtins
+    CompetitionHandler.manifest = manifest
+    CompetitionHandler.market_specs = market_specs
 
     with http.server.ThreadingHTTPServer(("", args.port), CompetitionHandler) as httpd:
         print(f"Serving at http://localhost:{args.port}")
