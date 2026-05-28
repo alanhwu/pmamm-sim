@@ -318,7 +318,11 @@ function renderLeaderboard(data) {
   const liq = config?.initial_liquidity || 10000;
 
   // Collect categories
-  const categories = [...new Set((markets || []).map(m => m.category || 'other'))].sort();
+  const categories = [...new Set((markets || []).map(m => m.category || 'other'))].sort((a, b) => {
+    if (a === 'other') return 1;
+    if (b === 'other') return -1;
+    return a.localeCompare(b);
+  });
   const catCounts = {};
   (markets || []).forEach(m => { const c = m.category || 'other'; catCounts[c] = (catCounts[c] || 0) + 1; });
 
