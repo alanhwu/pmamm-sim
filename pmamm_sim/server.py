@@ -357,8 +357,9 @@ class CompetitionHandler(SimpleHTTPRequestHandler):
             cat_returns: dict[str, list[float]] = {}
             for m in per_market_agg:
                 cat_returns.setdefault(m["category"], []).append(m["return_on_liquidity"])
-            cat_avgs = {cat: sum(rets) / len(rets) for cat, rets in cat_returns.items()}
-            category_score = sum(cat_avgs.values()) / len(cat_avgs) if cat_avgs else 0.0
+            from statistics import median
+            cat_medians = {cat: median(rets) for cat, rets in cat_returns.items()}
+            category_score = median(cat_medians.values()) if cat_medians else 0.0
 
             index["strategies"].append(strat_name)
             index["strategy_files"][strat_name] = strat_dir_name + ".json"
@@ -366,7 +367,7 @@ class CompetitionHandler(SimpleHTTPRequestHandler):
                 "author": strat_spec.get("author", ""),
                 "avg_return": avg_ret,
                 "category_score": category_score,
-                "category_averages": cat_avgs,
+                "category_averages": cat_medians,
                 "total_fees": total_fees,
                 "total_executed": total_executed,
                 "total_skipped": total_skipped,
