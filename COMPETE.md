@@ -169,21 +169,6 @@ class Strategy:
 
 ---
 
-## Baselines to beat
-
-The built-in strategies give you reference points:
-
-| Strategy | Avg Return | Approach |
-|----------|-----------|----------|
-| FixedFee(50bps) | ~+56% | Constant 0.5% fee |
-| FixedFee(100bps) | ~+87% | Constant 1% fee |
-| FixedFee(200bps) | ~+120% | Constant 2% fee |
-| EWMAMomentumFee | ~+123% | Asymmetric fees tracking price momentum + time ramp |
-
-These numbers come from the test dataset bundled with the repo. The competition server runs against a larger set of markets, so exact numbers will differ — but the relative ordering gives you intuition.
-
----
-
 ## Ideas to explore
 
 - **Time decay** — Adverse selection (informed trading) gets worse as resolution approaches. Ramp fees up near the end.
