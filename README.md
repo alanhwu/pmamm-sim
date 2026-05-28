@@ -8,11 +8,11 @@ This repo is a research / backtesting tool: it does not trade live capital or co
 
 ## What this repo does
 
-1. **Ingest** — Resolve a Polymarket event/market, pull complete order history from Dome, and convert fills into a chronological list where each row reflects activity in **YES / USDC terms** (including sports-style outcomes by treating one outcome as “YES”).
+1. **Ingest** — Resolve a Polymarket event/market, pull complete order history from Dome, and convert fills into a chronological list where each row reflects activity in **YES / NO terms** (including sports-style outcomes by treating one outcome as “YES”).
 
 2. **Collapse & load** — The simulator reads JSON trade lists. It groups fills by `tx_hash`, treats each transaction as one **fair-price observation** (see `pmamm_sim/data_loader.py`), and builds `MarketTrade` rows: timestamp, implied YES probability, and approximate USD size.
 
-3. **Simulate** — For each historical “tick,” the model compares the pool’s **spot price** to that tick’s **fair price** (from the real market). A **rational arbitrageur** is assumed: they trade against the AMM only when, after fees, the trade is profitable. The AMM uses a **constant-product** curve in YES vs USDC; strategy code only controls **bid/ask fees** (and how they change over time), not the bonding curve family.
+3. **Simulate** — For each historical “tick,” the model compares the pool’s **spot price** to that tick’s **fair price** (from the real market). A **rational arbitrageur** is assumed: they trade against the AMM only when, after fees, the trade is profitable. The AMM uses a **constant-product** curve in YES vs NO; strategy code only controls **bid/ask fees** (and how they change over time), not the bonding curve family.
 
 4. **Measure** — After replaying all trades and applying a binary **resolution** (`YES` vs `NO` wins), the engine reports **fee revenue**, **resolution PnL**, and **total return on initial liquidity**, optionally **versus a baseline fee strategy**.
 
@@ -68,7 +68,7 @@ The **simulator never calls Dome**; only `utils/fetch_trades.py` needs a `DOME_A
 
 - **Strategies** — Implement `before_swap` / `after_swap` hooks (see `pmamm_sim/strategies.py`). Built-in names include **`fixed`**, **`time_decay`** (fees rise toward resolution), **`volatility`**, **`combined`**, **`ewma_momentum`**, plus a registry of fixed fee levels for sweeps. CLI **`--test-strategy`** picks the candidate; **`--baseline-fee`** configures the comparison baseline (bps).
 
-- **PnL** — `PnLTracker` + `compute_final` separate **fees collected**, **mark-to-market** effects, and the **binary payout** when the market resolves. Because strategies leave different residual YES vs USDC and fee inventories, **resolution PnL** can differ even when fee revenues look similar.
+- **PnL** — `PnLTracker` + `compute_final` separate **fees collected**, **mark-to-market** effects, and the **binary payout** when the market resolves. Because strategies leave different residual YES vs NO and fee inventories, **resolution PnL** can differ even when fee revenues look similar.
 
 ---
 
@@ -193,7 +193,7 @@ Submissions are sandboxed — only safe stdlib modules and `pmamm_sim.types` can
 
 ## Further reading in code
 
-- Normalization from Dome → YES/USDC: `utils/fetch_trades.py` (`normalize_trade`, etc.).
+- Normalization from Dome → YES/NO: `fetch_trades.py` (`normalize_trade`, etc.).
 - Why trades are grouped by `tx_hash` and volume is halved: docstring in `pmamm_sim/data_loader.py`.
 - Full strategy list for batch sweeps: `STRATEGY_REGISTRY` in `pmamm_sim/strategies.py`.
 

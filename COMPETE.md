@@ -12,7 +12,7 @@ Your strategy decides: **how much to charge on each trade?**
 - Charge too much: trades get skipped (they fall inside the "no-arbitrage band") and you earn nothing
 - The sweet spot depends on volatility, time to resolution, and market dynamics
 
-Your strategy is scored by **average return on liquidity** across all markets. The leaderboard ranks everyone's strategies against the same data.
+Your strategy is scored by **median return on liquidity** across all markets. The leaderboard ranks everyone's strategies against the same data.
 
 ---
 
@@ -65,10 +65,10 @@ cp submissions/_template.py submissions/my_strategy.py
 python -m pmamm_sim compete ./submissions/
 ```
 
-This sweeps your strategy across all 12 bundled markets and prints a leaderboard. Add `--include-builtins` to see how you compare to the built-in strategies:
+This sweeps your strategy across all bundled markets and prints a leaderboard. Built-in strategies are included by default. Pass `--no-builtins` to exclude them:
 
 ```bash
-python -m pmamm_sim compete ./submissions/ --include-builtins
+python -m pmamm_sim compete ./submissions/ --no-builtins
 ```
 
 4. For detailed per-market charts, run the server and open the visualizer:

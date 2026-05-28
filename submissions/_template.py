@@ -9,13 +9,16 @@ To create a competition entry:
 4. Run: python -m pmamm_sim compete ./submissions/
 
 Rules:
-- Your file MUST contain a class named 'Strategy'.
-- Strategy() must be instantiable with NO arguments.
+- Your file should contain a class named 'Strategy' (preferred).
+  As a fallback, the loader auto-detects any class with
+  before_swap() and after_swap() methods.
+- The class must be instantiable with NO arguments.
 - It must implement:
     before_swap(pending: PendingTrade) -> FeeQuote
     after_swap(trade: TradeInfo | None) -> None
-- You may import from: standard library, pmamm_sim.types.
-- A fresh Strategy instance is created for each market.
+- Allowed imports: math, statistics, collections, dataclasses,
+  functools, itertools, and pmamm_sim.types.
+- A fresh instance is created for each market.
 
 Optional module-level metadata:
 - STRATEGY_NAME: str  -- display name on the leaderboard (default: filename)
