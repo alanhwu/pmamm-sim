@@ -262,13 +262,15 @@ def run_full_sweep(
         total_signals = total_executed + total_skipped
         avg_skip_rate = total_skipped / total_signals if total_signals > 0 else 0.0
 
-        # Category-weighted score: median within each category, then median across categories
+        # Overall score: median across all markets
+        # Per-category: median within each category
         from statistics import median
+        all_returns = [m["return_on_liquidity"] for m in per_market_agg]
+        category_score = median(all_returns) if all_returns else 0.0
         cat_returns: dict[str, list[float]] = {}
         for m in per_market_agg:
             cat_returns.setdefault(m["category"], []).append(m["return_on_liquidity"])
         cat_medians = {cat: median(rets) for cat, rets in cat_returns.items()}
-        category_score = median(cat_medians.values()) if cat_medians else 0.0
 
         index["strategies"].append(strat_name)
         index["strategy_files"][strat_name] = strat_dir_name + ".json"
