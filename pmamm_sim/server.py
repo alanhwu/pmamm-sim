@@ -247,9 +247,12 @@ class CompetitionHandler(SimpleHTTPRequestHandler):
         except Exception as e:
             self._send_json({"error": f"Run failed: {e}"}, 500)
             return
-
-        # Prune: keep only top 2 submissions per author
-        self._prune_submissions(author, keep=2)
+        finally:
+            # Prune after sweep completes, regardless of response success
+            try:
+                self._prune_submissions(author, keep=2)
+            except Exception:
+                pass
 
         self._handle_leaderboard_with_extras(submitted_name=name, load_errors=[])
 
