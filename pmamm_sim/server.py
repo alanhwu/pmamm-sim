@@ -190,14 +190,14 @@ class CompetitionHandler(SimpleHTTPRequestHandler):
             }, 400)
             return
 
-        # Build and save the file
+        # Build and save the file — metadata AFTER user code so ours wins
         file_content = (
             f'"""Submitted via web UI."""\n\n'
             f"from pmamm_sim.types import FeeQuote, PendingTrade, TradeInfo\n\n"
+            f"{code}\n\n"
             f"STRATEGY_NAME = {name!r}\n"
             f"AUTHOR = {author!r}\n"
-            f"DESCRIPTION = {description!r}\n\n\n"
-            f"{code}\n"
+            f"DESCRIPTION = {description!r}\n"
         )
 
         try:
@@ -227,10 +227,10 @@ class CompetitionHandler(SimpleHTTPRequestHandler):
                 file_content = (
                     f'"""Submitted via web UI."""\n\n'
                     f"from pmamm_sim.types import FeeQuote, PendingTrade, TradeInfo\n\n"
+                    f"{code}\n\n"
                     f"STRATEGY_NAME = {name!r}\n"
                     f"AUTHOR = {author!r}\n"
-                    f"DESCRIPTION = {description!r}\n\n\n"
-                    f"{code}\n"
+                    f"DESCRIPTION = {description!r}\n"
                 )
                 safe_name = re.sub(r"[^a-zA-Z0-9_]", "_", name)
                 safe_name = re.sub(r"_+", "_", safe_name).strip("_").lower()
