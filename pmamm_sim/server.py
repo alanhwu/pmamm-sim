@@ -212,12 +212,35 @@ class CompetitionHandler(SimpleHTTPRequestHandler):
         sdir.mkdir(parents=True, exist_ok=True)
         safe_name = re.sub(r"[^a-zA-Z0-9_]", "_", name)
         safe_name = re.sub(r"_+", "_", safe_name).strip("_").lower()
+
+        # If this name already exists in the index, make it unique
+        index_path = Path(self.results_dir) / "index.json"
+        if index_path.exists():
+            with open(index_path) as f:
+                existing = set(json.load(f).get("strategies", []))
+            if name in existing:
+                i = 2
+                while f"{name} ({i})" in existing:
+                    i += 1
+                name = f"{name} ({i})"
+                # Update file content with new name
+                file_content = (
+                    f'"""Submitted via web UI."""\n\n'
+                    f"from pmamm_sim.types import FeeQuote, PendingTrade, TradeInfo\n\n"
+                    f"STRATEGY_NAME = {name!r}\n"
+                    f"AUTHOR = {author!r}\n"
+                    f"DESCRIPTION = {description!r}\n\n\n"
+                    f"{code}\n"
+                )
+                safe_name = re.sub(r"[^a-zA-Z0-9_]", "_", name)
+                safe_name = re.sub(r"_+", "_", safe_name).strip("_").lower()
+
         filepath = sdir / f"{safe_name}.py"
         filepath.write_text(file_content)
 
         # Run sweep in-process with preloaded data
         try:
-            error = self._run_sweep_with_timeout()
+            error = self._run_sweep_with_timeout(rerun_name=name)
             if error:
                 self._send_json({"error": error}, 400)
                 return
@@ -230,7 +253,7 @@ class CompetitionHandler(SimpleHTTPRequestHandler):
 
         self._handle_leaderboard_with_extras(submitted_name=name, load_errors=[])
 
-    def _run_sweep_with_timeout(self) -> str | None:
+    def _run_sweep_with_timeout(self, rerun_name: str | None = None) -> str | None:
         """Run only the NEW strategy and merge into existing index. Returns error string or None."""
         from concurrent.futures import ProcessPoolExecutor
         from datetime import datetime, timezone
