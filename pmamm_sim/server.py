@@ -225,6 +225,9 @@ class CompetitionHandler(SimpleHTTPRequestHandler):
             self._send_json({"error": f"Run failed: {e}"}, 500)
             return
 
+        # Prune: keep only top 2 submissions per author
+        self._prune_submissions(author, keep=2)
+
         self._handle_leaderboard_with_extras(submitted_name=name, load_errors=[])
 
     def _run_sweep_with_timeout(self) -> str | None:
@@ -382,6 +385,68 @@ class CompetitionHandler(SimpleHTTPRequestHandler):
             json.dump(index, f)
 
         return None
+
+    def _prune_submissions(self, author: str, keep: int = 2):
+        """Keep only the top N submissions per author. Deletes the rest from disk and index."""
+        import shutil
+
+        author = (author or "").strip()
+        if not author:
+            return
+
+        index_path = Path(self.results_dir) / "index.json"
+        if not index_path.exists():
+            return
+
+        with open(index_path) as f:
+            index = json.load(f)
+
+        agg = index.get("aggregate", {})
+
+        # Find all strategies by this author
+        by_author = []
+        for strat_name, stats in agg.items():
+            if (stats.get("author", "") or "").strip() == author:
+                score = stats.get("category_score", stats.get("avg_return", 0))
+                by_author.append((strat_name, score))
+
+        if len(by_author) <= keep:
+            return
+
+        # Sort by score descending, mark the bottom ones for deletion
+        by_author.sort(key=lambda x: x[1], reverse=True)
+        to_delete = [name for name, _ in by_author[keep:]]
+
+        for strat_name in to_delete:
+            # Remove from index
+            if strat_name in agg:
+                strat_file = index["strategy_files"].get(strat_name, "")
+                del agg[strat_name]
+                del index["strategy_files"][strat_name]
+                if strat_name in index["strategies"]:
+                    index["strategies"].remove(strat_name)
+
+                # Delete strategy results directory
+                strat_dir = Path(self.results_dir) / strat_file.replace(".json", "")
+                if strat_dir.is_dir():
+                    shutil.rmtree(strat_dir)
+
+                # Delete strategy index file
+                strat_index = Path(self.results_dir) / strat_file
+                if strat_index.exists():
+                    strat_index.unlink()
+
+            # Delete submission file
+            sdir = Path(self.submissions_dir)
+            safe_name = re.sub(r"[^a-zA-Z0-9_]", "_", strat_name)
+            safe_name = re.sub(r"_+", "_", safe_name).strip("_").lower()
+            sub_file = sdir / f"{safe_name}.py"
+            if sub_file.exists():
+                sub_file.unlink()
+
+        # Write updated index
+        with open(index_path, "w") as f:
+            json.dump(index, f)
 
     def _handle_leaderboard_with_extras(self, submitted_name, load_errors):
         """Return leaderboard JSON after a submission, with extra metadata."""
