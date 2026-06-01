@@ -211,6 +211,7 @@ class CompetitionHandler(SimpleHTTPRequestHandler):
             }, 400)
             return
 
+        submitted_result = None
         try:
             # Serialize all submit/update/prune operations to avoid race conditions
             # when multiple users submit concurrently.
@@ -251,13 +252,23 @@ class CompetitionHandler(SimpleHTTPRequestHandler):
                     self._send_json({"error": error}, 400)
                     return
 
+                # Capture the freshly computed score payload before pruning.
+                submitted_result = self._get_submission_result(name)
+
                 # Keep only the top N submissions for every author.
                 self._prune_submissions(author=None, keep=2)
+
+                if submitted_result is not None:
+                    submitted_result["kept_on_leaderboard"] = self._strategy_exists(name)
         except Exception as e:
             self._send_json({"error": f"Run failed: {e}"}, 500)
             return
 
-        self._handle_leaderboard_with_extras(submitted_name=name, load_errors=[])
+        self._handle_leaderboard_with_extras(
+            submitted_name=name,
+            load_errors=[],
+            submitted_result=submitted_result,
+        )
 
     def _run_sweep_with_timeout(self, rerun_name: str | None = None) -> str | None:
         """Run only the NEW strategy and merge into existing index. Returns error string or None."""
@@ -482,7 +493,12 @@ class CompetitionHandler(SimpleHTTPRequestHandler):
         # Write updated index
         self._write_json_atomic(index_path, index)
 
-    def _handle_leaderboard_with_extras(self, submitted_name, load_errors):
+    def _handle_leaderboard_with_extras(
+        self,
+        submitted_name,
+        load_errors,
+        submitted_result=None,
+    ):
         """Return leaderboard JSON after a submission, with extra metadata."""
         index_path = Path(self.results_dir) / "index.json"
         if not index_path.exists():
@@ -516,6 +532,7 @@ class CompetitionHandler(SimpleHTTPRequestHandler):
         self._send_json({
             "ok": True,
             "submitted": submitted_name,
+            "submitted_result": submitted_result,
             "strategies": strategies,
             "markets": index.get("markets", []),
             "config": index.get("config", {}),
@@ -531,6 +548,61 @@ class CompetitionHandler(SimpleHTTPRequestHandler):
         self.send_header("Content-Length", str(len(body)))
         self.end_headers()
         self.wfile.write(body)
+
+    def _strategy_exists(self, strategy_name: str) -> bool:
+        index_path = Path(self.results_dir) / "index.json"
+        if not index_path.exists():
+            return False
+        with open(index_path) as f:
+            index = json.load(f)
+        return strategy_name in index.get("aggregate", {})
+
+    def _get_submission_result(self, strategy_name: str) -> dict | None:
+        """Return score details for a just-run strategy."""
+        index_path = Path(self.results_dir) / "index.json"
+        if not index_path.exists():
+            return None
+
+        with open(index_path) as f:
+            index = json.load(f)
+
+        agg = index.get("aggregate", {})
+        stats = agg.get(strategy_name)
+        if not stats:
+            return None
+
+        def score_of(item):
+            return item[1].get("category_score", item[1].get("avg_return", 0.0))
+
+        ranked = sorted(agg.items(), key=score_of, reverse=True)
+        overall_rank = None
+        for i, (name, _stats) in enumerate(ranked, 1):
+            if name == strategy_name:
+                overall_rank = i
+                break
+
+        author_key = (stats.get("author", "") or "").strip().casefold()
+        by_author = [
+            item for item in ranked
+            if (item[1].get("author", "") or "").strip().casefold() == author_key
+        ]
+        author_rank = None
+        for i, (name, _stats) in enumerate(by_author, 1):
+            if name == strategy_name:
+                author_rank = i
+                break
+
+        return {
+            "name": strategy_name,
+            "author": stats.get("author", ""),
+            "avg_return": stats.get("avg_return", 0.0),
+            "category_score": stats.get("category_score", stats.get("avg_return", 0.0)),
+            "avg_skip_rate": stats.get("avg_skip_rate", 0.0),
+            "overall_rank": overall_rank,
+            "overall_total": len(ranked),
+            "author_rank": author_rank,
+            "author_total": len(by_author),
+        }
 
     def _write_json_atomic(self, path: Path, payload: dict):
         """Atomically write JSON to avoid partial reads during concurrent access."""

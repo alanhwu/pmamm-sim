@@ -538,14 +538,33 @@ btnSubmit.addEventListener('click', async () => {
       return;
     }
 
-    // Find the submitted strategy's rank
-    const submitted = data.strategies.find(s => s.name === name);
-    const rank = submitted ? submitted.rank : '?';
+    const submittedName = data.submitted || name;
+    const submitted = data.submitted_result || data.strategies.find(s => s.name === submittedName);
 
     statusEl.className = 'success';
-    statusEl.textContent = `Submitted! "${name}" ranked #${rank} of ${data.strategies.length}.`;
+    if (submitted && data.submitted_result) {
+      const score = submitted.category_score ?? submitted.avg_return ?? 0;
+      const scoreText = fmtPct(score);
+      const skipText = ((submitted.avg_skip_rate ?? 0) * 100).toFixed(1) + '%';
+      const overallRank = submitted.overall_rank ?? '?';
+      const overallTotal = submitted.overall_total ?? data.strategies.length;
+      const authorRank = submitted.author_rank ?? '?';
+      const authorTotal = submitted.author_total ?? '?';
 
-    lastHighlight = name;
+      if (submitted.kept_on_leaderboard === false) {
+        statusEl.textContent =
+          `Submitted! "${submittedName}" scored ${scoreText} (skip ${skipText}, overall #${overallRank}/${overallTotal}). ` +
+          `Not retained on leaderboard because only top 2 submissions per author are kept (your author rank: ${authorRank}/${authorTotal}).`;
+      } else {
+        statusEl.textContent =
+          `Submitted! "${submittedName}" scored ${scoreText} (skip ${skipText}) and is ranked #${overallRank} of ${overallTotal}.`;
+      }
+    } else {
+      const rank = submitted ? submitted.rank : '?';
+      statusEl.textContent = `Submitted! "${submittedName}" ranked #${rank} of ${data.strategies.length}.`;
+    }
+
+    lastHighlight = submittedName;
     renderLeaderboard(data);
 
     // Show load errors if any
