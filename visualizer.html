@@ -1,9 +1,9 @@
 <!DOCTYPE html>
 <!--
-  Serve with: python -m pmamm_sim.cli serve --results-dir results/
+  Serve with: python -m pmamm_sim.cli serve --results-dir results_public
   Or:         python -m http.server 8080
   Then open:  http://localhost:8080/visualizer.html
-  Results should be in a results/ folder in the same directory.
+  Optional:   http://localhost:8080/visualizer.html?results=results_final
 -->
 <html lang="en">
 <head>
@@ -135,7 +135,7 @@
 </head>
 <body>
 
-<div id="loading">Loading results/index.json&hellip;</div>
+<div id="loading">Loading results index&hellip;</div>
 
 <div id="app">
   <div id="top-bar">
@@ -149,6 +149,7 @@
       <select id="sel-b" class="strat-select"></select>
     </div>
     <div id="agg-stats"></div>
+    <span id="results-source" style="font-size:11px;color:#64748b;white-space:nowrap"></span>
     <a href="/compete.html" style="color:#818cf8;text-decoration:none;font-size:13px;margin-left:12px;white-space:nowrap">Competition</a>
   </div>
   <div id="body-wrap">
@@ -224,12 +225,31 @@ let selectedMarketIdx = 0;
 let stratA = '';                // currently selected strategy A name
 let stratB = '';                // currently selected strategy B name
 let activeCharts = [];          // Chart instances to destroy on re-render
+const DEFAULT_RESULTS_DIR = 'results_public';
+let RESULTS_DIR = DEFAULT_RESULTS_DIR;
+
+function normalizeResultsDir(raw) {
+  if (!raw) return null;
+  const cleaned = String(raw).trim().replace(/^\/+|\/+$/g, '');
+  if (!cleaned) return null;
+  if (!/^[A-Za-z0-9._/-]+$/.test(cleaned)) return null;
+  return cleaned;
+}
+
+function resolveRequestedResultsDir() {
+  const requested = new URLSearchParams(window.location.search).get('results');
+  return normalizeResultsDir(requested);
+}
+
+function resultsUrl(path) {
+  return `${RESULTS_DIR}/${path}`;
+}
 
 /* ── fetch a strategy index file, with caching ──────────── */
 async function ensureStrategy(name) {
   if (strategyCache[name]) return strategyCache[name];
   const filename = INDEX.strategy_files[name];
-  const resp = await fetch('results/' + filename);
+  const resp = await fetch(resultsUrl(filename));
   if (!resp.ok) throw new Error('Failed to load ' + filename);
   const data = await resp.json();
   // Cache for per-market trade data (lazy-loaded)
@@ -251,7 +271,7 @@ async function ensureMarketTrades(stratName, marketIdx) {
   if (mkt.file) {
     const stratFile = INDEX.strategy_files[stratName];
     const stratDir = stratFile.replace('.json', '');
-    const resp = await fetch('results/' + stratDir + '/' + mkt.file);
+    const resp = await fetch(resultsUrl(stratDir + '/' + mkt.file));
     if (!resp.ok) return [];
     const marketData = await resp.json();
     data._tradeCache[marketIdx] = marketData.trades || [];
@@ -497,13 +517,33 @@ async function onStrategyChange() {
 
 /* ── boot ─────────────────────────────────────────────────── */
 async function boot() {
-  try {
-    const resp = await fetch('results/index.json');
-    if (!resp.ok) throw new Error(resp.status + ' ' + resp.statusText);
-    INDEX = await resp.json();
-  } catch (err) {
+  const requestedDir = resolveRequestedResultsDir();
+  const candidateDirs = requestedDir
+    ? [requestedDir]
+    : [DEFAULT_RESULTS_DIR, 'results']; // legacy fallback
+  let loadError = '';
+
+  for (const dir of candidateDirs) {
+    try {
+      const resp = await fetch(`${dir}/index.json`);
+      if (!resp.ok) {
+        loadError = `${dir}/index.json -> ${resp.status} ${resp.statusText}`;
+        continue;
+      }
+      INDEX = await resp.json();
+      RESULTS_DIR = dir;
+      break;
+    } catch (err) {
+      loadError = `${dir}/index.json -> ${err.message}`;
+    }
+  }
+
+  if (!INDEX) {
     document.getElementById('loading').textContent =
-      'Failed to load results/index.json\n\nServe this directory with:\n  python -m pmamm_sim.cli serve --results-dir results/\nor:\n  python -m http.server 8080\n\n' + err.message;
+      'Failed to load a results index.\n\n' +
+      `Tried: ${candidateDirs.join(', ')}\n` +
+      'Use ?results=results_public or ?results=results_final.\n\n' +
+      loadError;
     return;
   }
 
@@ -527,6 +567,8 @@ async function boot() {
 
   selA.addEventListener('change', () => { stratA = selA.value; onStrategyChange(); });
   selB.addEventListener('change', () => { stratB = selB.value; onStrategyChange(); });
+  const sourceEl = document.getElementById('results-source');
+  if (sourceEl) sourceEl.textContent = `Data source: ${RESULTS_DIR}`;
 
   /* select first non-hidden market */
   selectedMarketIdx = INDEX.markets.findIndex(m => !m.hidden);
