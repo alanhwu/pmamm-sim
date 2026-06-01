@@ -6,88 +6,121 @@
 <title>Prediction Market AMM Dynamic Fee Competition</title>
 <style>
   *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  :root {
+    --bg-0: #080713;
+    --bg-1: #111027;
+    --bg-2: #181530;
+    --bg-3: #1f1b3d;
+    --border: #2e2850;
+    --border-strong: #3d3569;
+    --text: #f4f2ff;
+    --text-muted: #aaa3c8;
+    --text-subtle: #8077a6;
+    --accent-pink: #fc72ff;
+    --accent-pink-hover: #ff8bff;
+    --accent-purple: #9a7bff;
+    --success: #4be3b4;
+    --danger: #ff7ea8;
+    --warning: #f3c861;
+  }
   body {
     font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-    background: #0f172a; color: #e2e8f0; min-height: 100vh;
+    background: radial-gradient(1200px 800px at 15% -10%, #2e1a54 0%, var(--bg-0) 45%), var(--bg-0);
+    color: var(--text); min-height: 100vh;
+    height: 100vh;
+    overflow: hidden;
     display: flex; flex-direction: column;
   }
 
   /* ── top bar ───────────────────────────────────────────── */
   #top-bar {
     display: flex; align-items: center; gap: 16px;
-    padding: 12px 24px; background: #1e293b; border-bottom: 1px solid #334155;
+    padding: 11px 24px; background: rgba(17, 16, 39, .92); border-bottom: 1px solid var(--border);
+    backdrop-filter: blur(6px);
     font-size: 13px; flex-shrink: 0;
   }
-  #top-bar h1 { font-size: 16px; font-weight: 600; color: #f1f5f9; }
+  #top-bar h1 { font-size: 15px; font-weight: 600; color: var(--text); }
   #top-bar .nav-links { margin-left: auto; display: flex; gap: 16px; }
   #top-bar .nav-links a {
-    color: #818cf8; text-decoration: none; font-size: 13px;
+    color: var(--accent-pink); text-decoration: none; font-size: 13px;
   }
-  #top-bar .nav-links a:hover { color: #a5b4fc; text-decoration: underline; }
+  #top-bar .nav-links a:hover { color: var(--accent-pink-hover); text-decoration: underline; }
 
   /* ── main layout ───────────────────────────────────────── */
-  #main { display: flex; flex: 1; min-height: 0; }
+  #main { display: flex; flex: 1; min-height: 0; overflow: hidden; }
 
   /* ── left: editor panel ────────────────────────────────── */
   #editor-panel {
     width: 690px; flex-shrink: 0; display: flex; flex-direction: column;
-    border-right: 1px solid #334155; background: #0d1526;
+    border-right: 1px solid var(--border); background: rgba(12, 10, 30, .88);
+    min-height: 0;
+    overflow: hidden;
   }
   #editor-panel h2 {
     font-size: 11px; text-transform: uppercase; letter-spacing: .5px;
-    color: #475569; padding: 14px 16px 0; font-weight: 600;
+    color: var(--text-subtle); padding: 14px 16px 0; font-weight: 600;
   }
 
   .form-group { padding: 8px 16px; }
   .form-group label {
-    display: block; font-size: 11px; color: #64748b;
+    display: block; font-size: 11px; color: var(--text-subtle);
     text-transform: uppercase; letter-spacing: .5px; margin-bottom: 4px;
   }
   .form-input {
-    width: 100%; background: #1e293b; color: #e2e8f0;
-    border: 1px solid #334155; border-radius: 6px;
+    width: 100%; background: var(--bg-2); color: var(--text);
+    border: 1px solid var(--border); border-radius: 8px;
     padding: 7px 10px; font-size: 13px; font-family: inherit;
     outline: none;
   }
-  .form-input:focus { border-color: #6366f1; }
+  .form-input:focus { border-color: var(--accent-pink); box-shadow: 0 0 0 1px rgba(252, 114, 255, .4); }
   .form-row { display: flex; gap: 8px; }
   .form-row .form-group { flex: 1; }
 
   #code-editor {
     flex: 1; width: 100%; resize: none;
-    background: #0f172a; color: #e2e8f0;
-    border: 1px solid #334155; border-radius: 6px;
+    background: var(--bg-1); color: #e9e5fa;
+    border: 1px solid var(--border); border-radius: 8px;
     padding: 12px; font-size: 13px; line-height: 1.5;
     font-family: 'SF Mono', 'Fira Code', 'Cascadia Code', Menlo, Consolas, monospace;
     tab-size: 4; outline: none;
+    scrollbar-width: thin;
+    scrollbar-color: var(--border-strong) transparent;
   }
-  #code-editor:focus { border-color: #6366f1; }
+  #code-editor:focus { border-color: var(--accent-pink); box-shadow: 0 0 0 1px rgba(252, 114, 255, .35); }
+  #code-editor::-webkit-scrollbar { width: 8px; }
+  #code-editor::-webkit-scrollbar-track { background: transparent; }
+  #code-editor::-webkit-scrollbar-thumb {
+    background: var(--border); border-radius: 6px;
+  }
+  #code-editor:hover::-webkit-scrollbar-thumb { background: var(--border-strong); }
+  #code-editor::-webkit-scrollbar-thumb:hover { background: #51467f; }
   .editor-wrap { flex: 1; display: flex; flex-direction: column; padding: 8px 16px 12px; min-height: 0; }
   .editor-wrap label { margin-bottom: 4px; }
 
   /* ── submit bar ────────────────────────────────────────── */
   .submit-bar {
-    padding: 12px 16px; border-top: 1px solid #1e293b;
+    padding: 12px 16px; border-top: 1px solid var(--border);
     display: flex; align-items: flex-start; gap: 12px;
   }
   #btn-submit {
-    background: #6366f1; color: #fff; border: none; border-radius: 6px;
+    background: linear-gradient(135deg, var(--accent-pink), var(--accent-purple)); color: #fff;
+    border: none; border-radius: 8px;
     padding: 8px 20px; font-size: 13px; font-weight: 600; cursor: pointer;
     font-family: inherit; white-space: nowrap;
   }
-  #btn-submit:hover { background: #4f46e5; }
-  #btn-submit:disabled { background: #334155; color: #64748b; cursor: not-allowed; }
+  #btn-submit:hover { filter: brightness(1.06); }
+  #btn-submit:disabled { background: var(--bg-3); color: var(--text-subtle); cursor: not-allowed; }
   #status {
-    font-size: 12px; color: #94a3b8; flex: 1;
+    font-size: 12px; color: var(--text-muted); flex: 1;
     white-space: normal; overflow-wrap: anywhere; line-height: 1.35;
   }
-  #status.error { color: #f87171; }
-  #status.success { color: #4ade80; }
+  #status.error { color: var(--danger); }
+  #status.success { color: var(--success); }
 
   /* ── spinner ───────────────────────────────────────────── */
   .spinner {
     display: inline-block; width: 14px; height: 14px;
-    border: 2px solid #475569; border-top-color: #818cf8;
+    border: 2px solid var(--border-strong); border-top-color: var(--accent-pink);
     border-radius: 50%; animation: spin .6s linear infinite;
     vertical-align: middle; margin-right: 6px;
   }
@@ -95,54 +128,55 @@
 
   /* ── right: leaderboard panel ──────────────────────────── */
   #leaderboard-panel {
-    flex: 1; min-width: 0; overflow-y: auto; padding: 20px 24px;
+    flex: 1; min-width: 0; overflow-y: auto; padding: 11px 20px 16px;
     scrollbar-width: thin; scrollbar-color: transparent transparent;
+    min-height: 0;
   }
-  #leaderboard-panel:hover { scrollbar-color: #334155 transparent; }
+  #leaderboard-panel:hover { scrollbar-color: var(--border-strong) transparent; }
   #leaderboard-panel::-webkit-scrollbar { width: 6px; }
   #leaderboard-panel::-webkit-scrollbar-track { background: transparent; }
   #leaderboard-panel::-webkit-scrollbar-thumb { background: transparent; border-radius: 3px; }
-  #leaderboard-panel:hover::-webkit-scrollbar-thumb { background: #334155; }
+  #leaderboard-panel:hover::-webkit-scrollbar-thumb { background: var(--border-strong); }
 
   #leaderboard-panel h2 {
-    font-size: 14px; font-weight: 600; color: #f1f5f9; margin-bottom: 4px;
+    font-size: 14px; font-weight: 600; color: var(--text); margin-bottom: 2px;
   }
-  .lb-subtitle { font-size: 12px; color: #64748b; margin-bottom: 16px; }
+  .lb-subtitle { font-size: 12px; color: var(--text-subtle); margin-bottom: 8px; }
 
   /* ── leaderboard table ─────────────────────────────────── */
   .lb-table { width: 100%; border-collapse: collapse; font-size: 13px; }
   .lb-table th {
     text-align: left; font-size: 10px; text-transform: uppercase;
-    letter-spacing: .5px; color: #475569; font-weight: 600;
-    padding: 6px 12px; border-bottom: 1px solid #334155;
+    letter-spacing: .5px; color: var(--text-subtle); font-weight: 600;
+    padding: 5px 10px; border-bottom: 1px solid var(--border);
   }
   .lb-table th.num { text-align: right; }
-  .lb-table td { padding: 10px 12px; border-bottom: 1px solid #1e293b; vertical-align: top; }
+  .lb-table td { padding: 8px 10px; border-bottom: 1px solid var(--border); vertical-align: top; }
   .lb-table td.num { text-align: right; font-variant-numeric: tabular-nums; }
-  .lb-table tr:hover td { background: rgba(30,41,59,.5); }
-  .lb-table tr.highlight td { background: rgba(99,102,241,.12); }
+  .lb-table tr:hover td { background: rgba(252, 114, 255, .07); }
+  .lb-table tr.highlight td { background: rgba(252, 114, 255, .14); }
 
-  .rank-cell { font-weight: 700; width: 50px; }
-  .rank-1 { color: #fbbf24; }
-  .rank-2 { color: #d1d5db; }
-  .rank-3 { color: #d97706; }
+  .rank-cell { font-weight: 700; width: 42px; }
+  .rank-1 { color: var(--warning); }
+  .rank-2 { color: #d8d2f0; }
+  .rank-3 { color: #cfa070; }
 
-  .green { color: #4ade80; }
-  .red { color: #f87171; }
-  .strat-name { font-weight: 600; color: #e2e8f0; }
+  .green { color: var(--success); }
+  .red { color: var(--danger); }
+  .strat-name { font-weight: 600; color: var(--text); }
 
   .info-tip {
     display: inline-flex; align-items: center; justify-content: center;
     width: 13px; height: 13px;
     font-size: 9px; font-weight: 600; font-style: normal;
-    color: #475569; border: 1px solid #334155; border-radius: 50%;
+    color: var(--text-subtle); border: 1px solid var(--border); border-radius: 50%;
     cursor: help; position: relative; margin-left: 3px; vertical-align: baseline;
   }
-  .info-tip:hover { color: #94a3b8; border-color: #64748b; }
+  .info-tip:hover { color: var(--text-muted); border-color: var(--border-strong); }
   .info-tip .tip-text {
     display: none; position: absolute; top: 20px; right: -8px;
-    background: #1e293b; border: 1px solid #475569; border-radius: 6px;
-    padding: 8px 10px; font-size: 12px; font-weight: 400; color: #cbd5e1;
+    background: var(--bg-2); border: 1px solid var(--border-strong); border-radius: 8px;
+    padding: 8px 10px; font-size: 12px; font-weight: 400; color: #ded9f5;
     white-space: normal; width: 240px; text-align: left; z-index: 10;
     line-height: 1.4; text-transform: none; letter-spacing: 0;
     box-shadow: 0 4px 12px rgba(0,0,0,.3);
@@ -150,54 +184,87 @@
   .info-tip:hover .tip-text { display: block; }
 
   .lb-empty {
-    text-align: center; padding: 48px 20px; color: #475569; font-size: 14px;
+    text-align: center; padding: 48px 20px; color: var(--text-subtle); font-size: 14px;
   }
 
   /* ── per-market expandable ─────────────────────────────── */
   .market-detail { display: none; }
   .market-detail.visible { display: table-row; }
-  .market-detail td { padding: 0 12px 12px 50px; border-bottom: 1px solid #1e293b; }
-  .market-detail-scroll { max-height: 200px; overflow-y: auto; scrollbar-width: thin; scrollbar-color: #334155 transparent; }
+  .market-detail td { padding: 0 10px 10px 42px; border-bottom: 1px solid var(--border); }
+  .market-detail-scroll { max-height: 162px; overflow-y: auto; scrollbar-width: thin; scrollbar-color: var(--border-strong) transparent; }
   .market-detail-scroll::-webkit-scrollbar { width: 5px; }
   .market-detail-scroll::-webkit-scrollbar-track { background: transparent; }
-  .market-detail-scroll::-webkit-scrollbar-thumb { background: #334155; border-radius: 3px; }
+  .market-detail-scroll::-webkit-scrollbar-thumb { background: var(--border-strong); border-radius: 3px; }
   .market-grid {
     display: grid; grid-template-columns: 1fr auto auto auto;
-    gap: 2px 16px; font-size: 12px; color: #94a3b8;
+    gap: 2px 12px; font-size: 12px; color: var(--text-muted);
   }
   .market-grid .mkt-name {
     overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
     max-width: 340px;
   }
   .expand-btn {
-    background: none; border: none; color: #64748b; cursor: pointer;
+    background: none; border: none; color: var(--text-subtle); cursor: pointer;
     font-size: 11px; padding: 2px 6px; border-radius: 3px;
   }
-  .expand-btn:hover { background: #1e293b; color: #94a3b8; }
+  .expand-btn:hover { background: var(--bg-2); color: var(--text-muted); }
 
   /* ── category tabs ─────────────────────────────────────── */
   .lb-tabs {
-    display: flex; gap: 0; margin-bottom: 16px; border-bottom: 1px solid #334155;
+    display: flex; gap: 0; margin-bottom: 8px; border-bottom: 1px solid var(--border);
   }
   .lb-tab {
-    background: none; border: none; color: #64748b; cursor: pointer;
-    padding: 8px 16px; font-size: 13px; font-family: inherit; font-weight: 500;
+    background: none; border: none; color: var(--text-subtle); cursor: pointer;
+    padding: 6px 12px; font-size: 13px; font-family: inherit; font-weight: 500;
     border-bottom: 2px solid transparent; transition: color .15s, border-color .15s;
   }
-  .lb-tab:hover { color: #94a3b8; }
-  .lb-tab.active { color: #e2e8f0; border-bottom-color: #818cf8; }
+  .lb-tab:hover { color: var(--text-muted); }
+  .lb-tab.active { color: var(--text); border-bottom-color: var(--accent-pink); }
   .lb-tab .tab-count {
-    font-size: 11px; color: #475569; margin-left: 4px;
+    font-size: 11px; color: var(--text-subtle); margin-left: 4px;
   }
-  .lb-tab.active .tab-count { color: #64748b; }
+  .lb-tab.active .tab-count { color: var(--text-muted); }
 
   .lb-tab-panel { display: none; }
   .lb-tab-panel.active { display: block; }
+  .paged-out { display: none !important; }
+
+  .lb-pagination {
+    margin-top: 12px;
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 8px;
+    color: var(--text-muted);
+    font-size: 12px;
+  }
+  .lb-page-btn {
+    background: var(--bg-2);
+    color: var(--text);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 4px 10px;
+    font-size: 12px;
+    font-family: inherit;
+    cursor: pointer;
+  }
+  .lb-page-btn:hover:not(:disabled) {
+    border-color: var(--accent-pink);
+    color: var(--accent-pink-hover);
+  }
+  .lb-page-btn:disabled {
+    opacity: .45;
+    cursor: not-allowed;
+  }
+  .lb-page-info {
+    min-width: 84px;
+    text-align: center;
+  }
 
   /* ── responsive ────────────────────────────────────────── */
   @media (max-width: 900px) {
     #main { flex-direction: column; }
-    #editor-panel { width: 100%; max-height: 50vh; border-right: none; border-bottom: 1px solid #334155; }
+    #editor-panel { width: 100%; max-height: 50vh; border-right: none; border-bottom: 1px solid var(--border); }
   }
 </style>
 </head>
@@ -224,12 +291,8 @@
         <input id="strat-author" class="form-input" type="text" placeholder="Your Name">
       </div>
     </div>
-    <div class="form-group">
-      <label for="strat-desc">Description (optional)</label>
-      <input id="strat-desc" class="form-input" type="text" placeholder="One-line description of your strategy">
-    </div>
     <div class="editor-wrap">
-      <label for="code-editor" style="font-size:11px;color:#64748b;text-transform:uppercase;letter-spacing:.5px;">Strategy Code</label>
+      <label for="code-editor" style="font-size:11px;color:var(--text-subtle);text-transform:uppercase;letter-spacing:.5px;">Strategy Code</label>
       <textarea id="code-editor" spellcheck="false"></textarea>
     </div>
     <div class="submit-bar">
@@ -287,6 +350,7 @@ const DEFAULT_CODE = `class Strategy:
 
 /* ── state ───────────────────────────────────────────────── */
 let lastHighlight = null;  // name of last submitted strategy
+const PAGE_SIZE = 10;
 
 /* ── tab key support in textarea ─────────────────────────── */
 const editor = document.getElementById('code-editor');
@@ -344,7 +408,7 @@ function renderLeaderboard(data) {
     return sb - sa;
   });
   html += '<div class="lb-tab-panel active" id="panel-overall">';
-  html += buildTable(overallSorted, strategies, markets, 'category_score', null);
+  html += buildTable(overallSorted, 'category_score', null, 'overall');
   html += '</div>';
 
   // Per-category panels
@@ -356,11 +420,17 @@ function renderLeaderboard(data) {
       return rb - ra;
     });
     html += `<div class="lb-tab-panel" id="panel-${esc(cat)}">`;
-    html += buildTable(catSorted, strategies, markets, 'category', cat);
+    html += buildTable(catSorted, 'category', cat, cat);
     html += '</div>';
   });
 
   content.innerHTML = html;
+
+  // Initialize each table section to its starting page.
+  content.querySelectorAll('.lb-table-section').forEach(section => {
+    const initialPage = Number(section.dataset.page) || 1;
+    applyTablePage(section, initialPage);
+  });
 
   // Wire up tabs
   content.querySelectorAll('.lb-tab').forEach(tab => {
@@ -370,6 +440,17 @@ function renderLeaderboard(data) {
       tab.classList.add('active');
       const panel = document.getElementById('panel-' + tab.dataset.tab);
       if (panel) panel.classList.add('active');
+    });
+  });
+
+  // Wire up pagination buttons.
+  content.querySelectorAll('.lb-page-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const section = btn.closest('.lb-table-section');
+      if (!section) return;
+      const currentPage = Number(section.dataset.page) || 1;
+      const nextPage = btn.dataset.action === 'prev' ? currentPage - 1 : currentPage + 1;
+      applyTablePage(section, nextPage);
     });
   });
 
@@ -399,11 +480,14 @@ function renderLeaderboard(data) {
   }
 }
 
-function buildTable(sorted, allStrategies, markets, scoreMode, category) {
+function buildTable(sorted, scoreMode, category, tabId) {
   // scoreMode: 'category_score' for overall, 'category' for per-cat
   const prefix = category ? `cat-${category}` : 'overall';
+  const totalPages = Math.max(1, Math.ceil(sorted.length / PAGE_SIZE));
+  const initialPage = getInitialTablePage(sorted);
 
-  let html = '<table class="lb-table"><thead><tr>';
+  let html = `<div class="lb-table-section" data-tab="${esc(tabId)}" data-page="${initialPage}" data-total-pages="${totalPages}">`;
+  html += '<table class="lb-table"><thead><tr>';
   html += '<th>Rank</th><th>Strategy</th><th>Author</th>';
   html += `<th class="num">${category ? 'Avg Return' : 'Score'}</th>`;
   html += '<th class="num">Skip Rate <span class="info-tip">i<span class="tip-text">Fraction of price signals that fell inside the no-arbitrage band and did not induce a trade. Higher fees widen the band, increasing skip rate. A 90% skip rate means only 10% of price moves were large enough to induce a trade.</span></span></th>';
@@ -412,6 +496,7 @@ function buildTable(sorted, allStrategies, markets, scoreMode, category) {
 
   sorted.forEach((s, idx) => {
     const rank = idx + 1;
+    const page = Math.floor(idx / PAGE_SIZE) + 1;
     const isHighlight = lastHighlight && s.name === lastHighlight;
     const rankClass = rank <= 3 ? ` rank-${rank}` : '';
     const rowClass = isHighlight ? ' class="highlight"' : '';
@@ -441,10 +526,10 @@ function buildTable(sorted, allStrategies, markets, scoreMode, category) {
 
     const detailId = `${prefix}-detail-${idx}`;
 
-    html += `<tr${rowClass} data-name="${esc(s.name)}">`;
+    html += `<tr${rowClass} data-name="${esc(s.name)}" data-page="${page}">`;
     html += `<td class="rank-cell${rankClass}">${rank}</td>`;
     html += `<td class="strat-name">${esc(s.name)}</td>`;
-    html += `<td style="color:#94a3b8;font-size:12px">${esc(s.author || '')}</td>`;
+    html += `<td style="color:var(--text-muted);font-size:12px">${esc(s.author || '')}</td>`;
     html += `<td class="num ${retClass}">${scoreStr}</td>`;
     html += `<td class="num">${(s.avg_skip_rate * 100).toFixed(1)}%</td>`;
     html += `<td style="text-align:center"><button class="expand-btn" data-detail="${detailId}">details</button></td>`;
@@ -457,16 +542,16 @@ function buildTable(sorted, allStrategies, markets, scoreMode, category) {
         const bHidden = b.question === 'Hidden Market' ? 1 : 0;
         return aHidden - bHidden;
       });
-      html += `<tr class="market-detail" id="${detailId}"><td colspan="6">`;
+      html += `<tr class="market-detail" id="${detailId}" data-page="${page}"><td colspan="6">`;
       html += '<div class="market-detail-scroll"><div class="market-grid">';
-      html += '<div style="font-weight:600;color:#64748b">Market</div>';
-      html += '<div style="font-weight:600;color:#64748b;text-align:right">Return</div>';
-      html += '<div style="font-weight:600;color:#64748b;text-align:right">Fees</div>';
-      html += '<div style="font-weight:600;color:#64748b;text-align:right">Skip</div>';
+      html += '<div style="font-weight:600;color:var(--text-subtle)">Market</div>';
+      html += '<div style="font-weight:600;color:var(--text-subtle);text-align:right">Return</div>';
+      html += '<div style="font-weight:600;color:var(--text-subtle);text-align:right">Fees</div>';
+      html += '<div style="font-weight:600;color:var(--text-subtle);text-align:right">Skip</div>';
       sortedMarkets.forEach(m => {
         const mRetClass = m.return_on_liquidity >= 0 ? 'green' : 'red';
         const q = m.question || 'Unknown';
-        const dimStyle = q === 'Hidden Market' ? ' style="color:#475569"' : '';
+        const dimStyle = q === 'Hidden Market' ? ' style="color:var(--text-subtle)"' : '';
         html += `<div class="mkt-name"${dimStyle} title="${esc(q)}">${esc(q)}</div>`;
         html += `<div style="text-align:right" class="${mRetClass}">${fmtPct(m.return_on_liquidity)}</div>`;
         html += `<div style="text-align:right">${fmtUsd(m.fee_revenue)}</div>`;
@@ -477,7 +562,55 @@ function buildTable(sorted, allStrategies, markets, scoreMode, category) {
   });
 
   html += '</tbody></table>';
+  if (totalPages > 1) {
+    html += '<div class="lb-pagination">';
+    html += '<button class="lb-page-btn" data-action="prev">Prev</button>';
+    html += '<span class="lb-page-info">Page <span class="lb-page-current"></span> / <span class="lb-page-total"></span></span>';
+    html += '<button class="lb-page-btn" data-action="next">Next</button>';
+    html += '</div>';
+  }
+  html += '</div>';
   return html;
+}
+
+function getInitialTablePage(sorted) {
+  if (!lastHighlight) return 1;
+  const idx = sorted.findIndex(s => s.name === lastHighlight);
+  if (idx < 0) return 1;
+  return Math.floor(idx / PAGE_SIZE) + 1;
+}
+
+function applyTablePage(section, desiredPage) {
+  const totalPages = Number(section.dataset.totalPages) || 1;
+  const page = Math.max(1, Math.min(desiredPage, totalPages));
+  section.dataset.page = String(page);
+
+  section.querySelectorAll('tr[data-page]').forEach(row => {
+    const rowPage = Number(row.dataset.page) || 1;
+    const onCurrentPage = rowPage === page;
+    row.classList.toggle('paged-out', !onCurrentPage);
+    if (!onCurrentPage && row.classList.contains('market-detail')) {
+      row.classList.remove('visible');
+    }
+  });
+
+  // Reset detail button labels for hidden rows.
+  section.querySelectorAll('.expand-btn').forEach(btn => {
+    const detail = document.getElementById(btn.dataset.detail);
+    if (detail && detail.classList.contains('paged-out')) {
+      btn.textContent = 'details';
+    }
+  });
+
+  const currentEl = section.querySelector('.lb-page-current');
+  const totalEl = section.querySelector('.lb-page-total');
+  if (currentEl) currentEl.textContent = String(page);
+  if (totalEl) totalEl.textContent = String(totalPages);
+
+  const prevBtn = section.querySelector('.lb-page-btn[data-action="prev"]');
+  const nextBtn = section.querySelector('.lb-page-btn[data-action="next"]');
+  if (prevBtn) prevBtn.disabled = page <= 1;
+  if (nextBtn) nextBtn.disabled = page >= totalPages;
 }
 
 function esc(s) {
@@ -628,7 +761,6 @@ async function pollJobStatus(jobId, fallbackName, pollAfterMs) {
 btnSubmit.addEventListener('click', async () => {
   const name = document.getElementById('strat-name').value.trim();
   const author = document.getElementById('strat-author').value.trim();
-  const description = document.getElementById('strat-desc').value.trim();
   const code = editor.value;
 
   if (!name) {
@@ -652,7 +784,7 @@ btnSubmit.addEventListener('click', async () => {
     const resp = await fetch('/api/submit', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ name, author, description, code }),
+      body: JSON.stringify({ name, author, code }),
     });
 
     const data = await resp.json();

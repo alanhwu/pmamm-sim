@@ -13,15 +13,32 @@
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js"></script>
 <style>
   *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  :root {
+    --bg-0: #080713;
+    --bg-1: #111027;
+    --bg-2: #181530;
+    --bg-3: #1f1b3d;
+    --border: #2e2850;
+    --border-strong: #3d3569;
+    --text: #f4f2ff;
+    --text-muted: #aaa3c8;
+    --text-subtle: #8077a6;
+    --accent-pink: #fc72ff;
+    --accent-pink-hover: #ff8bff;
+    --accent-blue: #52b9ff;
+    --success: #4be3b4;
+    --danger: #ff7ea8;
+  }
   body {
     font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-    background: #0f172a; color: #e2e8f0; min-height: 100vh;
+    background: radial-gradient(1200px 800px at 15% -10%, #2e1a54 0%, var(--bg-0) 45%), var(--bg-0);
+    color: var(--text); min-height: 100vh;
   }
 
   /* ── loading / error ───────────────────────────────────── */
   #loading {
     display: flex; align-items: center; justify-content: center;
-    height: 100vh; font-size: 15px; color: #94a3b8; white-space: pre-line; text-align: center;
+    height: 100vh; font-size: 15px; color: var(--text-muted); white-space: pre-line; text-align: center;
   }
   #loading.hidden { display: none; }
 
@@ -32,96 +49,97 @@
   /* ── top bar (dropdowns + aggregate) ───────────────────── */
   #top-bar {
     display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
-    padding: 10px 20px; background: #1e293b; border-bottom: 1px solid #334155;
+    padding: 10px 20px; background: rgba(17, 16, 39, .92); border-bottom: 1px solid var(--border);
+    backdrop-filter: blur(6px);
     font-size: 13px; flex-shrink: 0;
   }
   .strat-picker { display: flex; align-items: center; gap: 6px; }
-  .strat-picker label { color: #64748b; font-size: 11px; text-transform: uppercase; letter-spacing: .5px; }
+  .strat-picker label { color: var(--text-subtle); font-size: 11px; text-transform: uppercase; letter-spacing: .5px; }
   .strat-select {
-    background: #0f172a; color: #e2e8f0; border: 1px solid #334155; border-radius: 6px;
+    background: var(--bg-2); color: var(--text); border: 1px solid var(--border); border-radius: 6px;
     padding: 5px 28px 5px 10px; font-size: 13px; font-family: inherit;
     appearance: none; -webkit-appearance: none;
-    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath d='M3 5l3 3 3-3' fill='none' stroke='%2394a3b8' stroke-width='1.5'/%3E%3C/svg%3E");
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath d='M3 5l3 3 3-3' fill='none' stroke='%23aaa3c8' stroke-width='1.5'/%3E%3C/svg%3E");
     background-repeat: no-repeat; background-position: right 8px center;
     cursor: pointer; outline: none; min-width: 160px;
   }
-  .strat-select:focus { border-color: #6366f1; }
-  .vs-label { color: #475569; font-size: 12px; font-weight: 500; }
+  .strat-select:focus { border-color: var(--accent-pink); box-shadow: 0 0 0 1px rgba(252, 114, 255, .4); }
+  .vs-label { color: var(--text-subtle); font-size: 12px; font-weight: 500; }
 
   #agg-stats { display: flex; align-items: center; gap: 18px; margin-left: auto; flex-wrap: wrap; }
   #agg-stats .agg-item { white-space: nowrap; }
-  #agg-stats .agg-label { color: #64748b; margin-right: 4px; }
+  #agg-stats .agg-label { color: var(--text-subtle); margin-right: 4px; }
   #agg-stats .agg-value { font-weight: 600; }
-  .green { color: #4ade80; } .red { color: #f87171; }
-  .color-a { color: #818cf8; } .color-b { color: #f59e0b; }
+  .green { color: var(--success); } .red { color: var(--danger); }
+  .color-a { color: var(--accent-pink); } .color-b { color: var(--accent-blue); }
 
   /* ── body layout ───────────────────────────────────────── */
   #body-wrap { display: flex; flex: 1; min-height: 0; }
 
   /* ── sidebar ───────────────────────────────────────────── */
   #sidebar {
-    width: 260px; flex-shrink: 0; background: #0d1526; border-right: 1px solid #1e293b;
+    width: 260px; flex-shrink: 0; background: rgba(12, 10, 30, .88); border-right: 1px solid var(--border);
     overflow-y: overlay; overflow-y: auto;
     scrollbar-width: thin; scrollbar-color: transparent transparent;
   }
-  #sidebar:hover { scrollbar-color: #334155 transparent; }
+  #sidebar:hover { scrollbar-color: var(--border-strong) transparent; }
   #sidebar::-webkit-scrollbar { width: 6px; }
   #sidebar::-webkit-scrollbar-track { background: transparent; }
   #sidebar::-webkit-scrollbar-thumb { background: transparent; border-radius: 3px; }
-  #sidebar:hover::-webkit-scrollbar-thumb { background: #334155; }
-  #sidebar:hover::-webkit-scrollbar-thumb:hover { background: #475569; }
+  #sidebar:hover::-webkit-scrollbar-thumb { background: var(--border-strong); }
+  #sidebar:hover::-webkit-scrollbar-thumb:hover { background: #51467f; }
   #sidebar h2 {
     font-size: 11px; text-transform: uppercase; letter-spacing: .5px;
-    color: #475569; padding: 14px 14px 8px; font-weight: 600;
+    color: var(--text-subtle); padding: 14px 14px 8px; font-weight: 600;
   }
   .market-item {
     padding: 10px 14px; cursor: pointer; border-left: 3px solid transparent;
     transition: background .1s;
   }
-  .market-item:hover { background: rgba(30,41,59,.6); }
-  .market-item.selected { background: #1e293b; }
-  .market-item.win { border-left-color: #4ade80; }
-  .market-item.loss { border-left-color: #f87171; }
-  .market-item.tie { border-left-color: #475569; }
+  .market-item:hover { background: rgba(252, 114, 255, .07); }
+  .market-item.selected { background: rgba(252, 114, 255, .12); }
+  .market-item.win { border-left-color: var(--success); }
+  .market-item.loss { border-left-color: var(--danger); }
+  .market-item.tie { border-left-color: var(--text-subtle); }
   .market-item .mkt-q {
-    font-size: 13px; color: #cbd5e1; line-height: 1.35;
-    display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
+    font-size: 13px; color: #ded9f5; line-height: 1.35;
+    display: -webkit-box; line-clamp: 2; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
   }
   .market-item .mkt-delta { font-size: 12px; font-weight: 600; margin-top: 3px; }
-  .market-item .mkt-trades { font-size: 11px; color: #475569; margin-top: 1px; }
+  .market-item .mkt-trades { font-size: 11px; color: var(--text-subtle); margin-top: 1px; }
 
   /* ── main dashboard ────────────────────────────────────── */
   #main {
     flex: 1; min-width: 0; overflow-y: overlay; overflow-y: auto; padding: 24px 24px 48px;
     scrollbar-width: thin; scrollbar-color: transparent transparent;
   }
-  #main:hover { scrollbar-color: #334155 transparent; }
+  #main:hover { scrollbar-color: var(--border-strong) transparent; }
   #main::-webkit-scrollbar { width: 6px; }
   #main::-webkit-scrollbar-track { background: transparent; }
   #main::-webkit-scrollbar-thumb { background: transparent; border-radius: 3px; }
-  #main:hover::-webkit-scrollbar-thumb { background: #334155; }
-  #main:hover::-webkit-scrollbar-thumb:hover { background: #475569; }
+  #main:hover::-webkit-scrollbar-thumb { background: var(--border-strong); }
+  #main:hover::-webkit-scrollbar-thumb:hover { background: #51467f; }
 
   header { margin-bottom: 20px; }
-  header h1 { font-size: 18px; font-weight: 600; color: #f1f5f9; margin-bottom: 6px; }
-  .meta-row { display: flex; gap: 18px; flex-wrap: wrap; font-size: 12px; color: #94a3b8; }
+  header h1 { font-size: 18px; font-weight: 600; color: var(--text); margin-bottom: 6px; }
+  .meta-row { display: flex; gap: 18px; flex-wrap: wrap; font-size: 12px; color: var(--text-muted); }
   .meta-row span { white-space: nowrap; }
 
   /* ── cards ──────────────────────────────────────────────── */
   .cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px; margin-bottom: 24px; }
-  .card { background: #1e293b; border: 1px solid #334155; border-radius: 8px; padding: 12px 14px; }
-  .card .label { font-size: 10px; text-transform: uppercase; letter-spacing: .5px; color: #64748b; margin-bottom: 3px; }
+  .card { background: var(--bg-2); border: 1px solid var(--border); border-radius: 10px; padding: 12px 14px; }
+  .card .label { font-size: 10px; text-transform: uppercase; letter-spacing: .5px; color: var(--text-subtle); margin-bottom: 3px; }
   .card .value { font-size: 20px; font-weight: 600; }
-  .card .sub { font-size: 11px; color: #94a3b8; margin-top: 2px; }
+  .card .sub { font-size: 11px; color: var(--text-muted); margin-top: 2px; }
 
   /* ── charts ─────────────────────────────────────────────── */
   .chart-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
-  .chart-box { background: #1e293b; border: 1px solid #334155; border-radius: 8px; padding: 14px; position: relative; }
-  .chart-box h3 { font-size: 12px; font-weight: 500; color: #94a3b8; margin-bottom: 10px; }
+  .chart-box { background: var(--bg-2); border: 1px solid var(--border); border-radius: 10px; padding: 14px; position: relative; }
+  .chart-box h3 { font-size: 12px; font-weight: 500; color: var(--text-muted); margin-bottom: 10px; }
   .chart-box canvas { width: 100% !important; }
   .chart-loading {
     position: absolute; inset: 0; display: flex; align-items: center; justify-content: center;
-    background: rgba(15,23,42,.85); border-radius: 8px; font-size: 13px; color: #64748b; z-index: 2;
+    background: rgba(8, 7, 19, .86); border-radius: 10px; font-size: 13px; color: var(--text-subtle); z-index: 2;
   }
   .chart-loading.hidden { display: none; }
 
@@ -129,7 +147,7 @@
   @media (max-width: 900px) { .chart-grid { grid-template-columns: 1fr; } }
   @media (max-width: 700px) {
     #body-wrap { flex-direction: column; }
-    #sidebar { width: 100%; max-height: 200px; border-right: none; border-bottom: 1px solid #1e293b; }
+    #sidebar { width: 100%; max-height: 200px; border-right: none; border-bottom: 1px solid var(--border); }
   }
 </style>
 </head>
@@ -149,8 +167,8 @@
       <select id="sel-b" class="strat-select"></select>
     </div>
     <div id="agg-stats"></div>
-    <span id="results-source" style="font-size:11px;color:#64748b;white-space:nowrap"></span>
-    <a href="/compete.html" style="color:#818cf8;text-decoration:none;font-size:13px;margin-left:12px;white-space:nowrap">Competition</a>
+    <span id="results-source" style="font-size:11px;color:var(--text-subtle);white-space:nowrap"></span>
+    <a href="/compete.html" style="color:var(--accent-pink);text-decoration:none;font-size:13px;margin-left:12px;white-space:nowrap">Competition</a>
   </div>
   <div id="body-wrap">
     <div id="sidebar">
@@ -196,27 +214,27 @@ function downsample(arr, maxPts) {
 }
 
 /* ── Chart.js defaults ───────────────────────────────────── */
-Chart.defaults.color = '#94a3b8';
-Chart.defaults.borderColor = '#1e293b';
+Chart.defaults.color = '#aaa3c8';
+Chart.defaults.borderColor = '#2e2850';
 Chart.defaults.font.size = 11;
 
-const gridOpts = { color: 'rgba(71,85,105,.4)' };
+const gridOpts = { color: 'rgba(128,119,166,.35)' };
 const baseTooltip = {
-  backgroundColor: '#1e293b', titleColor: '#e2e8f0', bodyColor: '#cbd5e1',
-  borderColor: '#475569', borderWidth: 1, padding: 10,
+  backgroundColor: '#181530', titleColor: '#f4f2ff', bodyColor: '#ded9f5',
+  borderColor: '#3d3569', borderWidth: 1, padding: 10,
   bodyFont: { family: 'monospace', size: 12 },
 };
 function makeXAxis() {
   return {
     type: 'linear', min: 0, max: 1,
-    grid: gridOpts, title: { display: true, text: 'Market lifetime %', color: '#64748b' },
+    grid: gridOpts, title: { display: true, text: 'Market lifetime %', color: '#8077a6' },
     ticks: { callback: v => (v * 100).toFixed(0) + '%' },
   };
 }
 
-const COLOR_A = '#818cf8';
-const COLOR_B = '#f59e0b';
-const COLOR_A_FILL = 'rgba(129,140,248,.08)';
+const COLOR_A = '#fc72ff';
+const COLOR_B = '#52b9ff';
+const COLOR_A_FILL = 'rgba(252,114,255,.08)';
 
 /* ── state ───────────────────────────────────────────────── */
 let INDEX = null;               // parsed index.json
@@ -430,7 +448,7 @@ async function renderDashboard() {
         legend: { labels: { boxWidth: 12, padding: 12 } },
         tooltip: { ...baseTooltip, callbacks: { title: tooltipTitle, label: ctx => ctx.dataset.label + ': ' + ctx.parsed.y.toFixed(4) } },
       },
-      scales: { x: makeXAxis(), y: { grid: gridOpts, title: { display: true, text: 'YES Price', color: '#64748b' } } },
+      scales: { x: makeXAxis(), y: { grid: gridOpts, title: { display: true, text: 'YES Price', color: '#8077a6' } } },
     },
   }));
 
@@ -451,7 +469,7 @@ async function renderDashboard() {
       },
       scales: {
         x: makeXAxis(),
-        y: { grid: gridOpts, title: { display: true, text: 'Cumulative Fees (USD)', color: '#64748b' },
+        y: { grid: gridOpts, title: { display: true, text: 'Cumulative Fees (USD)', color: '#8077a6' },
              ticks: { callback: v => fmtUsd(v) } },
       },
     },
@@ -464,7 +482,7 @@ async function renderDashboard() {
       datasets: [
         { label: stratA, data: [{x:0, y:-liq}, ...xyFrom(tradesA, t => t.cumulative_fees - liq)], borderColor: COLOR_A, pointRadius: 0, borderWidth: 1.5 },
         { label: stratB, data: [{x:0, y:-liq}, ...xyFrom(tradesB, t => t.cumulative_fees - liq)], borderColor: COLOR_B, pointRadius: 0, borderWidth: 1.5 },
-        { label: 'Breakeven', data: [{x:0,y:0},{x:1,y:0}], borderColor: 'rgba(248,113,113,.4)', borderWidth: 1, borderDash: [6, 4], pointRadius: 0 },
+        { label: 'Breakeven', data: [{x:0,y:0},{x:1,y:0}], borderColor: 'rgba(255,126,168,.45)', borderWidth: 1, borderDash: [6, 4], pointRadius: 0 },
       ],
     },
     options: {
@@ -477,7 +495,7 @@ async function renderDashboard() {
       },
       scales: {
         x: makeXAxis(),
-        y: { grid: gridOpts, title: { display: true, text: 'Net LP Value (USD)', color: '#64748b' },
+        y: { grid: gridOpts, title: { display: true, text: 'Net LP Value (USD)', color: '#8077a6' },
              ticks: { callback: v => fmtUsd(v) } },
       },
     },
@@ -500,7 +518,7 @@ async function renderDashboard() {
       },
       scales: {
         x: makeXAxis(),
-        y: { grid: gridOpts, title: { display: true, text: 'Fee Rate (bps)', color: '#64748b' },
+        y: { grid: gridOpts, title: { display: true, text: 'Fee Rate (bps)', color: '#8077a6' },
              ticks: { callback: v => v.toFixed(0) + ' bps' } },
       },
     },
