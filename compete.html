@@ -68,7 +68,7 @@
   /* ── submit bar ────────────────────────────────────────── */
   .submit-bar {
     padding: 12px 16px; border-top: 1px solid #1e293b;
-    display: flex; align-items: center; gap: 12px;
+    display: flex; align-items: flex-start; gap: 12px;
   }
   #btn-submit {
     background: #6366f1; color: #fff; border: none; border-radius: 6px;
@@ -79,7 +79,7 @@
   #btn-submit:disabled { background: #334155; color: #64748b; cursor: not-allowed; }
   #status {
     font-size: 12px; color: #94a3b8; flex: 1;
-    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    white-space: normal; overflow-wrap: anywhere; line-height: 1.35;
   }
   #status.error { color: #f87171; }
   #status.success { color: #4ade80; }
