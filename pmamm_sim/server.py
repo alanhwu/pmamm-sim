@@ -7,7 +7,9 @@ this server in trusted environments. See pmamm_sim/sandbox.py for details.
 
 import ast
 import json
+import os
 import re
+import tempfile
 import threading
 from http.server import SimpleHTTPRequestHandler
 from pathlib import Path
@@ -71,6 +73,7 @@ class CompetitionHandler(SimpleHTTPRequestHandler):
     run_timeout: int = 120
     manifest: dict = {}
     market_specs: list = []
+    _submit_lock = threading.RLock()
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, directory=self.serve_root, **kwargs)
@@ -208,51 +211,51 @@ class CompetitionHandler(SimpleHTTPRequestHandler):
             }, 400)
             return
 
-        sdir = Path(self.submissions_dir)
-        sdir.mkdir(parents=True, exist_ok=True)
-        safe_name = re.sub(r"[^a-zA-Z0-9_]", "_", name)
-        safe_name = re.sub(r"_+", "_", safe_name).strip("_").lower()
-
-        # If this name already exists in the index, make it unique
-        index_path = Path(self.results_dir) / "index.json"
-        if index_path.exists():
-            with open(index_path) as f:
-                existing = set(json.load(f).get("strategies", []))
-            if name in existing:
-                i = 2
-                while f"{name} ({i})" in existing:
-                    i += 1
-                name = f"{name} ({i})"
-                # Update file content with new name
-                file_content = (
-                    f'"""Submitted via web UI."""\n\n'
-                    f"from pmamm_sim.types import FeeQuote, PendingTrade, TradeInfo\n\n"
-                    f"{code}\n\n"
-                    f"STRATEGY_NAME = {name!r}\n"
-                    f"AUTHOR = {author!r}\n"
-                    f"DESCRIPTION = {description!r}\n"
-                )
+        try:
+            # Serialize all submit/update/prune operations to avoid race conditions
+            # when multiple users submit concurrently.
+            with self._submit_lock:
+                sdir = Path(self.submissions_dir)
+                sdir.mkdir(parents=True, exist_ok=True)
                 safe_name = re.sub(r"[^a-zA-Z0-9_]", "_", name)
                 safe_name = re.sub(r"_+", "_", safe_name).strip("_").lower()
 
-        filepath = sdir / f"{safe_name}.py"
-        filepath.write_text(file_content)
+                # If this name already exists in the index, make it unique.
+                index_path = Path(self.results_dir) / "index.json"
+                if index_path.exists():
+                    with open(index_path) as f:
+                        existing = set(json.load(f).get("strategies", []))
+                    if name in existing:
+                        i = 2
+                        while f"{name} ({i})" in existing:
+                            i += 1
+                        name = f"{name} ({i})"
+                        # Update file content with new name
+                        file_content = (
+                            f'"""Submitted via web UI."""\n\n'
+                            f"from pmamm_sim.types import FeeQuote, PendingTrade, TradeInfo\n\n"
+                            f"{code}\n\n"
+                            f"STRATEGY_NAME = {name!r}\n"
+                            f"AUTHOR = {author!r}\n"
+                            f"DESCRIPTION = {description!r}\n"
+                        )
+                        safe_name = re.sub(r"[^a-zA-Z0-9_]", "_", name)
+                        safe_name = re.sub(r"_+", "_", safe_name).strip("_").lower()
 
-        # Run sweep in-process with preloaded data
-        try:
-            error = self._run_sweep_with_timeout(rerun_name=name)
-            if error:
-                self._send_json({"error": error}, 400)
-                return
+                filepath = sdir / f"{safe_name}.py"
+                filepath.write_text(file_content)
+
+                # Run sweep in-process with preloaded data
+                error = self._run_sweep_with_timeout(rerun_name=name)
+                if error:
+                    self._send_json({"error": error}, 400)
+                    return
+
+                # Keep only the top N submissions for every author.
+                self._prune_submissions(author=None, keep=2)
         except Exception as e:
             self._send_json({"error": f"Run failed: {e}"}, 500)
             return
-        finally:
-            # Prune after sweep completes, regardless of response success
-            try:
-                self._prune_submissions(author, keep=2)
-            except Exception:
-                pass
 
         self._handle_leaderboard_with_extras(submitted_name=name, load_errors=[])
 
@@ -407,17 +410,20 @@ class CompetitionHandler(SimpleHTTPRequestHandler):
 
         # Update timestamp and write index
         index["config"]["generated_at"] = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
-        with open(index_path, "w") as f:
-            json.dump(index, f)
+        self._write_json_atomic(index_path, index)
 
         return None
 
-    def _prune_submissions(self, author: str, keep: int = 2):
-        """Keep only the top N submissions per author. Deletes the rest from disk and index."""
+    def _prune_submissions(self, author: str | None = None, keep: int = 2):
+        """Keep only the top N submissions per author.
+
+        If author is provided, prunes only that author. If author is None, prunes all
+        authors in one pass.
+        """
         import shutil
 
-        author = (author or "").strip()
-        if not author:
+        target_author_key = (author or "").strip().casefold() if author is not None else None
+        if author is not None and not target_author_key:
             return
 
         index_path = Path(self.results_dir) / "index.json"
@@ -427,52 +433,54 @@ class CompetitionHandler(SimpleHTTPRequestHandler):
         with open(index_path) as f:
             index = json.load(f)
 
-        agg = index.get("aggregate", {})
+        agg = index.setdefault("aggregate", {})
+        strategies = index.setdefault("strategies", [])
+        strategy_files = index.setdefault("strategy_files", {})
 
-        # Find all strategies by this author
-        by_author = []
+        # Bucket strategies by author
+        by_author: dict[str, list[tuple[str, float]]] = {}
         for strat_name, stats in agg.items():
-            if (stats.get("author", "") or "").strip() == author:
-                score = stats.get("category_score", stats.get("avg_return", 0))
-                by_author.append((strat_name, score))
+            stats_author = (stats.get("author", "") or "").strip().casefold()
+            if target_author_key is not None and stats_author != target_author_key:
+                continue
+            score = stats.get("category_score", stats.get("avg_return", 0))
+            by_author.setdefault(stats_author, []).append((strat_name, score))
 
-        if len(by_author) <= keep:
+        to_delete: list[str] = []
+        for author_group in by_author.values():
+            if len(author_group) <= keep:
+                continue
+            # Sort by score descending, mark the bottom ones for deletion.
+            author_group.sort(key=lambda x: x[1], reverse=True)
+            to_delete.extend([name for name, _ in author_group[keep:]])
+
+        if not to_delete:
             return
-
-        # Sort by score descending, mark the bottom ones for deletion
-        by_author.sort(key=lambda x: x[1], reverse=True)
-        to_delete = [name for name, _ in by_author[keep:]]
 
         for strat_name in to_delete:
             # Remove from index
-            if strat_name in agg:
-                strat_file = index["strategy_files"].get(strat_name, "")
-                del agg[strat_name]
-                del index["strategy_files"][strat_name]
-                if strat_name in index["strategies"]:
-                    index["strategies"].remove(strat_name)
+            strat_file = strategy_files.pop(strat_name, "")
+            agg.pop(strat_name, None)
+            while strat_name in strategies:
+                strategies.remove(strat_name)
 
-                # Delete strategy results directory
+            # Delete strategy results directory and strategy index file
+            if strat_file:
                 strat_dir = Path(self.results_dir) / strat_file.replace(".json", "")
-                if strat_dir.is_dir():
-                    shutil.rmtree(strat_dir)
+                shutil.rmtree(strat_dir, ignore_errors=True)
 
-                # Delete strategy index file
                 strat_index = Path(self.results_dir) / strat_file
-                if strat_index.exists():
-                    strat_index.unlink()
+                strat_index.unlink(missing_ok=True)
 
             # Delete submission file
             sdir = Path(self.submissions_dir)
             safe_name = re.sub(r"[^a-zA-Z0-9_]", "_", strat_name)
             safe_name = re.sub(r"_+", "_", safe_name).strip("_").lower()
             sub_file = sdir / f"{safe_name}.py"
-            if sub_file.exists():
-                sub_file.unlink()
+            sub_file.unlink(missing_ok=True)
 
         # Write updated index
-        with open(index_path, "w") as f:
-            json.dump(index, f)
+        self._write_json_atomic(index_path, index)
 
     def _handle_leaderboard_with_extras(self, submitted_name, load_errors):
         """Return leaderboard JSON after a submission, with extra metadata."""
@@ -523,3 +531,19 @@ class CompetitionHandler(SimpleHTTPRequestHandler):
         self.send_header("Content-Length", str(len(body)))
         self.end_headers()
         self.wfile.write(body)
+
+    def _write_json_atomic(self, path: Path, payload: dict):
+        """Atomically write JSON to avoid partial reads during concurrent access."""
+        path.parent.mkdir(parents=True, exist_ok=True)
+        fd, tmp_path = tempfile.mkstemp(
+            dir=str(path.parent), prefix=f"{path.name}.", suffix=".tmp"
+        )
+        try:
+            with os.fdopen(fd, "w") as f:
+                json.dump(payload, f)
+                f.flush()
+                os.fsync(f.fileno())
+            Path(tmp_path).replace(path)
+        finally:
+            if Path(tmp_path).exists():
+                Path(tmp_path).unlink(missing_ok=True)
