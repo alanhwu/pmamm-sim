@@ -30,13 +30,21 @@ from pmamm_sim.sandbox import validate_code_safety
 from pmamm_sim.strategies import STRATEGY_REGISTRY
 
 
-def preload_market_data(data_folder: str | Path) -> tuple[dict, list[dict]]:
+def preload_market_data(
+    data_folder: str | Path,
+    *,
+    include_hidden: bool = False,
+) -> tuple[dict, list[dict]]:
     """Load manifest and all trade data once. Returns (manifest, market_specs)."""
     data_folder = Path(data_folder)
-    manifest = load_manifest(data_folder / "manifest.json")
+    source_manifest = load_manifest(data_folder / "manifest.json")
 
     market_specs = []
-    for spec in manifest["markets"]:
+    selected_markets = []
+    for spec in source_manifest["markets"]:
+        if spec.get("hidden", False) and not include_hidden:
+            continue
+        selected_markets.append(spec)
         trade_file = str(data_folder / spec["file"])
         trades, metadata = load_polymarket_trades(trade_file)
         initial_prob = spec.get("initial_prob", trades[0].yes_price if trades else 0.5)
@@ -53,7 +61,14 @@ def preload_market_data(data_folder: str | Path) -> tuple[dict, list[dict]]:
             "market_end": market_end,
         })
 
-    print(f"Preloaded {len(market_specs)} markets from {data_folder}")
+    manifest = dict(source_manifest)
+    manifest["markets"] = selected_markets
+    total = len(source_manifest.get("markets", []))
+    hidden = sum(1 for s in source_manifest.get("markets", []) if s.get("hidden", False))
+    print(
+        f"Preloaded {len(market_specs)} markets from {data_folder} "
+        f"(include_hidden={include_hidden}, total={total}, hidden={hidden})"
+    )
     return manifest, market_specs
 
 
@@ -67,6 +82,7 @@ class CompetitionHandler(SimpleHTTPRequestHandler):
         submissions_dir: path to submissions/
         liquidity:       initial LP deposit per market
         include_builtins: whether to include built-in strategies in runs
+        include_hidden:  whether to include manifest hidden markets
         manifest:        preloaded manifest dict
         market_specs:    preloaded market specs list
     """
@@ -77,6 +93,7 @@ class CompetitionHandler(SimpleHTTPRequestHandler):
     submissions_dir: str = "submissions"
     liquidity: float = 10_000
     include_builtins: bool = False
+    include_hidden: bool = False
     run_timeout: int = 120
     manifest: dict = {}
     market_specs: list = []
@@ -509,11 +526,23 @@ class CompetitionHandler(SimpleHTTPRequestHandler):
             with open(index_path) as f:
                 index = json.load(f)
             self._refresh_aggregate_scores(index)
+            index_include_hidden = index.get("config", {}).get("include_hidden")
+            if index_include_hidden is None:
+                index_include_hidden = True
+            if index_include_hidden != self.include_hidden:
+                mode = "include hidden markets" if self.include_hidden else "exclude hidden markets"
+                return (
+                    "Results mode mismatch for this results directory. "
+                    f"Current server is configured to {mode}, but existing index "
+                    "was generated with a different hidden-market setting. "
+                    "Use a separate --results-dir for public vs final scoring."
+                )
         else:
             index = {
                 "config": {
                     "initial_liquidity": liquidity,
                     "data_folder": self.data_folder,
+                    "include_hidden": self.include_hidden,
                     "generated_at": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
                 },
                 "strategies": [],

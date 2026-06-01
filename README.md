@@ -151,7 +151,7 @@ python -m pmamm_sim data/trades_khamenei-out-as-supreme-leader-of-iran-by-januar
 
 ### Batch + visualizer (intended workflow)
 
-The normal way to use this repo is to run a **full batch sweep** over every market in `data/manifest.json`, then open the local visualizer. By default, batch runs every strategy in `STRATEGY_REGISTRY`.
+The normal way to use this repo is to run a **full batch sweep** over the non-hidden markets in `data/manifest.json`, then open the local visualizer. By default, batch runs every strategy in `STRATEGY_REGISTRY`.
 
 ```bash
 rm -rf results
@@ -166,22 +166,28 @@ http://localhost:8080/visualizer.html
 ```
 
 Use `--strategies "FixedFee(100bps)"` only when you intentionally want a faster filtered run for debugging. If you use it, the visualizer will only show that filtered set until you regenerate `results/` without the flag.
+Pass `--include-hidden` only for final scoring workflows.
 
 ---
 
 ## Competition
 
-Submit fee strategies and compete on a leaderboard, ranked by a geometric-mean return score across all markets (with clipped per-market returns and a 5% market-average fill-rate activity gate).
+Submit fee strategies and compete on a leaderboard, ranked by a geometric-mean return score (with clipped per-market returns and a 5% market-average fill-rate activity gate). Public runs exclude manifest markets marked `hidden: true` by default.
 
 ```bash
 # CLI
 python -m pmamm_sim compete ./submissions/
+
+# Final scoring (include hidden holdout markets)
+python -m pmamm_sim compete ./submissions/ --include-hidden --results-dir ./results_final
 
 # Web UI (also serves the visualizer)
 python -m pmamm_sim serve
 # Competition: http://localhost:8080/compete.html
 # Visualizer:  http://localhost:8080/visualizer.html
 ```
+
+`serve`, `compete`, and `batch` exclude hidden markets by default. Pass `--include-hidden` only for final scoring workflows.
 
 Submissions are sandboxed — only safe stdlib modules and `pmamm_sim.types` can be imported. See `pmamm_sim/sandbox.py` for the allowlist.
 

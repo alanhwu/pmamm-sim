@@ -12,7 +12,9 @@ Your strategy decides: **how much to charge on each trade?**
 - Charge too much: trades get skipped (they fall inside the "no-arbitrage band") and you earn nothing
 - The sweet spot depends on volatility, time to resolution, and market dynamics
 
-Your strategy is scored by a **geometric-mean return score** across all markets (with per-market returns clipped for robustness). Strategies with **market-average fill rate below 5%** are disqualified from ranking.
+The leaderboard score is a **geometric-mean return score** across the markets shown on the site (with per-market returns clipped for robustness). Strategies with **market-average fill rate below 5%** are disqualified from ranking.
+
+Important: the competition's **final scoring** uses additional markets that are not shown on the public leaderboard. The live board is useful feedback, but it is not the final ranking.
 
 ---
 
@@ -71,11 +73,13 @@ cp submissions/_template.py submissions/my_strategy.py
 python -m pmamm_sim compete ./submissions/
 ```
 
-This sweeps your strategy across all bundled markets and prints a leaderboard. Built-in strategies are included by default. Pass `--no-builtins` to exclude them:
+This sweeps your strategy across the local evaluation set and prints a leaderboard. Built-in strategies are included by default. Pass `--no-builtins` to exclude them:
 
 ```bash
 python -m pmamm_sim compete ./submissions/ --no-builtins
 ```
+
+The hosted competition's final ranking is computed on a larger set than the public board shown during the competition.
 
 4. For detailed per-market charts, run the server and open the visualizer:
 

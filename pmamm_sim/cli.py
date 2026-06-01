@@ -25,6 +25,8 @@ def main():
                             help="Output directory for results (created if needed)")
         parser.add_argument("--strategies", type=str, default=None,
                             help="Comma-separated strategy names to run (default: all)")
+        parser.add_argument("--include-hidden", action="store_true",
+                            help="Include manifest markets marked hidden=true")
         args = parser.parse_args(sys.argv[2:])
         _run_batch(args)
     elif len(sys.argv) > 1 and sys.argv[1] == "serve":
@@ -43,6 +45,8 @@ def main():
                             help="Initial LP deposit in USDC per market (default: 10000)")
         parser.add_argument("--no-builtins", action="store_true",
                             help="Exclude built-in strategies from competition runs")
+        parser.add_argument("--include-hidden", action="store_true",
+                            help="Include manifest markets marked hidden=true")
         args = parser.parse_args(sys.argv[2:])
         args.include_builtins = not args.no_builtins
         _run_serve(args)
@@ -65,6 +69,8 @@ def main():
                             help="Comma-separated strategy names to run (default: all)")
         parser.add_argument("--fail-fast", action="store_true",
                             help="Stop on first submission load error")
+        parser.add_argument("--include-hidden", action="store_true",
+                            help="Include manifest markets marked hidden=true")
         args = parser.parse_args(sys.argv[2:])
         args.include_builtins = not args.no_builtins
         _run_compete(args)
@@ -222,6 +228,7 @@ def _run_batch(args):
         results_dir=args.results_dir,
         liquidity=args.liquidity,
         strategy_filter=strategy_filter,
+        include_hidden=args.include_hidden,
     )
 
 
@@ -234,7 +241,11 @@ def _run_serve(args):
 
     # Preload all market data once at startup
     print("Loading market data...")
-    manifest, market_specs = preload_market_data(args.data_folder)
+    manifest, market_specs = preload_market_data(
+        args.data_folder,
+        include_hidden=args.include_hidden,
+    )
+    print(f"Loaded {len(market_specs)} markets (include_hidden={args.include_hidden})")
 
     CompetitionHandler.serve_root = root
     CompetitionHandler.data_folder = args.data_folder
@@ -242,6 +253,7 @@ def _run_serve(args):
     CompetitionHandler.submissions_dir = args.submissions_dir
     CompetitionHandler.liquidity = args.liquidity
     CompetitionHandler.include_builtins = args.include_builtins
+    CompetitionHandler.include_hidden = args.include_hidden
     CompetitionHandler.manifest = manifest
     CompetitionHandler.market_specs = market_specs
 
@@ -305,6 +317,7 @@ def _run_compete(args):
         strategy_filter=strategy_filter,
         extra_strategies=strategies if strategies else None,
         include_builtins=args.include_builtins,
+        include_hidden=args.include_hidden,
     )
 
     _print_leaderboard(args.results_dir)

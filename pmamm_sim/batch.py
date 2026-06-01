@@ -157,9 +157,10 @@ def run_full_sweep(
     strategy_filter: set[str] | None = None,
     extra_strategies: list[dict] | None = None,
     include_builtins: bool = True,
+    include_hidden: bool = False,
     max_workers: int | None = None,
 ):
-    """Sweep all strategies across all markets, write per-strategy files + index.json."""
+    """Sweep all strategies across selected markets and write results/index."""
     data_folder = Path(data_folder)
     results_dir = Path(results_dir)
     results_dir.mkdir(parents=True, exist_ok=True)
@@ -185,6 +186,8 @@ def run_full_sweep(
     # Load metadata for the index (lightweight — just need trade counts and initial probs)
     market_specs = []
     for spec in manifest["markets"]:
+        if spec.get("hidden", False) and not include_hidden:
+            continue
         trade_file = str(data_folder / spec["file"])
         trades, metadata = load_polymarket_trades(trade_file)
         initial_prob = spec.get("initial_prob", trades[0].yes_price if trades else 0.5)
@@ -201,8 +204,14 @@ def run_full_sweep(
             "market_end": market_end,
         })
 
-    num_markets = len(manifest["markets"])
-    print(f"\n=== Strategy Sweep: {len(strategies)} strategies x {num_markets} markets ===")
+    num_markets = len(market_specs)
+    if num_markets == 0:
+        print("No markets selected. Check manifest hidden flags and --include-hidden.")
+        return
+    print(
+        f"\n=== Strategy Sweep: {len(strategies)} strategies x {num_markets} markets "
+        f"(include_hidden={include_hidden}) ==="
+    )
     print(f"Liquidity: ${liquidity:,.0f} per market\n")
 
     # Build index skeleton
@@ -210,6 +219,7 @@ def run_full_sweep(
         "config": {
             "initial_liquidity": liquidity,
             "data_folder": str(data_folder),
+            "include_hidden": include_hidden,
             "generated_at": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
         },
         "strategies": [],
