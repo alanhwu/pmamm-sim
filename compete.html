@@ -546,16 +546,16 @@ btnSubmit.addEventListener('click', async () => {
       const score = submitted.category_score ?? submitted.avg_return ?? 0;
       const scoreText = fmtPct(score);
       const skipText = ((submitted.avg_skip_rate ?? 0) * 100).toFixed(1) + '%';
-      const overallRank = submitted.overall_rank ?? '?';
-      const overallTotal = submitted.overall_total ?? data.strategies.length;
       const authorRank = submitted.author_rank ?? '?';
       const authorTotal = submitted.author_total ?? '?';
 
       if (submitted.kept_on_leaderboard === false) {
         statusEl.textContent =
-          `Submitted! "${submittedName}" scored ${scoreText} (skip ${skipText}, overall #${overallRank}/${overallTotal}). ` +
-          `Not retained on leaderboard because only top 2 submissions per author are kept (your author rank: ${authorRank}/${authorTotal}).`;
+          `Submitted! "${submittedName}" scored ${scoreText} (skip ${skipText}). ` +
+          `Not retained on leaderboard because only top 2 submissions per author are kept (your author rank: ${authorRank}/${authorTotal}; visible leaderboard size: ${data.strategies.length}).`;
       } else {
+        const overallRank = submitted.overall_rank ?? '?';
+        const overallTotal = submitted.overall_total ?? data.strategies.length;
         statusEl.textContent =
           `Submitted! "${submittedName}" scored ${scoreText} (skip ${skipText}) and is ranked #${overallRank} of ${overallTotal}.`;
       }
