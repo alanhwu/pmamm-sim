@@ -188,6 +188,7 @@ class Strategy:
 ## Rules
 
 - Your code must define a class with `before_swap` and `after_swap` methods
+- Use one consistent `AUTHOR` / author name for all your submissions. Do not use aliases, abbreviations, or variations to bypass the 2-submissions-per-author limit.
 - Imports are restricted to: `math`, `statistics`, `collections`, `dataclasses`, `functools`, `itertools`, and `pmamm_sim.types`
 - No file access, no network, no `exec`/`eval`, no dunder attribute tricks
 - The strategy must be instantiable with no arguments
