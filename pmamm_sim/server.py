@@ -6,11 +6,13 @@ this server in trusted environments. See pmamm_sim/sandbox.py for details.
 """
 
 import ast
+import hashlib
 import json
 import multiprocessing as mp
 import os
 import queue
 import re
+import socket
 import tempfile
 import threading
 import time
@@ -179,6 +181,9 @@ class CompetitionHandler(SimpleHTTPRequestHandler):
         self._ensure_job_worker()
         job_id = uuid.uuid4().hex
         submitted_at = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+        submitted_mono = time.monotonic()
+        request_ip = self.client_address[0] if self.client_address else ""
+        code_sha256 = hashlib.sha256(code.encode("utf-8")).hexdigest()
 
         with self._jobs_lock:
             self._jobs[job_id] = {
@@ -190,8 +195,16 @@ class CompetitionHandler(SimpleHTTPRequestHandler):
                 "submitted_at": submitted_at,
                 "started_at": None,
                 "finished_at": None,
+                "submitted_mono": submitted_mono,
+                "started_mono": None,
+                "queue_wait_ms": None,
+                "run_duration_ms": None,
+                "total_latency_ms": None,
+                "error_type": None,
                 "error": None,
                 "result": None,
+                "request_ip": request_ip,
+                "code_sha256": code_sha256,
                 "payload": {
                     "name": name,
                     "author": author,
@@ -202,7 +215,15 @@ class CompetitionHandler(SimpleHTTPRequestHandler):
 
         self._job_queue.put(job_id)
         queue_position = self._get_queue_position(job_id, "queued")
-        self._append_job_event(job_id, "queued", queue_position=queue_position)
+        self._append_job_event(
+            job_id,
+            "queued",
+            queue_position=queue_position,
+            requested_name=name,
+            author=author,
+            request_ip=request_ip,
+            code_sha256=code_sha256,
+        )
 
         self._send_json({
             "ok": True,
@@ -233,6 +254,10 @@ class CompetitionHandler(SimpleHTTPRequestHandler):
                 "submitted_at": job["submitted_at"],
                 "started_at": job["started_at"],
                 "finished_at": job["finished_at"],
+                "queue_wait_ms": job.get("queue_wait_ms"),
+                "run_duration_ms": job.get("run_duration_ms"),
+                "total_latency_ms": job.get("total_latency_ms"),
+                "error_type": job.get("error_type"),
                 "error": job["error"],
                 "result": job["result"],
                 "poll_after_ms": self._default_poll_ms,
@@ -269,11 +294,26 @@ class CompetitionHandler(SimpleHTTPRequestHandler):
             if not job:
                 return
             payload = job.get("payload", {})
+            started_mono = time.monotonic()
+            submitted_mono = job.get("submitted_mono")
+            queue_wait_ms = None
+            if isinstance(submitted_mono, (int, float)):
+                queue_wait_ms = int((started_mono - submitted_mono) * 1000)
             job["status"] = "running"
             job["started_at"] = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+            job["started_mono"] = started_mono
+            job["queue_wait_ms"] = queue_wait_ms
             cls._active_job_id = job_id
 
-        cls._append_job_event(job_id, "running")
+        cls._append_job_event(
+            job_id,
+            "running",
+            queue_wait_ms=queue_wait_ms,
+            requested_name=job.get("requested_name"),
+            author=job.get("author"),
+            request_ip=job.get("request_ip", ""),
+            code_sha256=job.get("code_sha256"),
+        )
 
         handler = cls.__new__(cls)
 
@@ -283,34 +323,86 @@ class CompetitionHandler(SimpleHTTPRequestHandler):
                 author=payload.get("author", "anonymous"),
                 description=payload.get("description", ""),
                 code=payload.get("code", ""),
+                job_id=job_id,
             )
+            finished_mono = time.monotonic()
+            finished_at = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
             with cls._jobs_lock:
                 current = cls._jobs.get(job_id)
                 if current:
                     current["status"] = "succeeded"
-                    current["finished_at"] = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+                    current["finished_at"] = finished_at
+                    current["error_type"] = None
                     current["result"] = result
                     current["error"] = None
+                    cls._set_timing_fields(current, finished_mono)
                     current.pop("payload", None)
-            cls._append_job_event(job_id, "succeeded")
+            submitted = result.get("submitted_result") or {}
+            cls._append_job_event(
+                job_id,
+                "succeeded",
+                requested_name=current.get("requested_name") if current else payload.get("name", ""),
+                submitted_name=result.get("submitted", ""),
+                author=current.get("author") if current else payload.get("author", ""),
+                queue_wait_ms=current.get("queue_wait_ms") if current else None,
+                run_duration_ms=current.get("run_duration_ms") if current else None,
+                total_latency_ms=current.get("total_latency_ms") if current else None,
+                category_score=submitted.get("category_score"),
+                avg_return=submitted.get("avg_return"),
+                avg_skip_rate=submitted.get("avg_skip_rate"),
+                kept_on_leaderboard=submitted.get("kept_on_leaderboard"),
+                author_rank=submitted.get("author_rank"),
+                author_total=submitted.get("author_total"),
+            )
         except TimeoutError as e:
+            finished_mono = time.monotonic()
+            finished_at = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+            error_message = cls._trim_text(str(e), 500)
             with cls._jobs_lock:
                 current = cls._jobs.get(job_id)
                 if current:
                     current["status"] = "timed_out"
-                    current["finished_at"] = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
-                    current["error"] = str(e)
+                    current["finished_at"] = finished_at
+                    current["error_type"] = "TimeoutError"
+                    current["error"] = error_message
+                    cls._set_timing_fields(current, finished_mono)
                     current.pop("payload", None)
-            cls._append_job_event(job_id, "timed_out", error=str(e))
+            cls._append_job_event(
+                job_id,
+                "timed_out",
+                requested_name=current.get("requested_name") if current else payload.get("name", ""),
+                author=current.get("author") if current else payload.get("author", ""),
+                queue_wait_ms=current.get("queue_wait_ms") if current else None,
+                run_duration_ms=current.get("run_duration_ms") if current else None,
+                total_latency_ms=current.get("total_latency_ms") if current else None,
+                error_type="TimeoutError",
+                error=error_message,
+            )
         except Exception as e:
+            finished_mono = time.monotonic()
+            finished_at = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+            error_type = type(e).__name__
+            error_message = cls._trim_text(str(e), 500)
             with cls._jobs_lock:
                 current = cls._jobs.get(job_id)
                 if current:
                     current["status"] = "failed"
-                    current["finished_at"] = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
-                    current["error"] = str(e)
+                    current["finished_at"] = finished_at
+                    current["error_type"] = error_type
+                    current["error"] = error_message
+                    cls._set_timing_fields(current, finished_mono)
                     current.pop("payload", None)
-            cls._append_job_event(job_id, "failed", error=str(e))
+            cls._append_job_event(
+                job_id,
+                "failed",
+                requested_name=current.get("requested_name") if current else payload.get("name", ""),
+                author=current.get("author") if current else payload.get("author", ""),
+                queue_wait_ms=current.get("queue_wait_ms") if current else None,
+                run_duration_ms=current.get("run_duration_ms") if current else None,
+                total_latency_ms=current.get("total_latency_ms") if current else None,
+                error_type=error_type,
+                error=error_message,
+            )
         finally:
             with cls._jobs_lock:
                 if cls._active_job_id == job_id:
@@ -323,6 +415,7 @@ class CompetitionHandler(SimpleHTTPRequestHandler):
         author: str,
         description: str,
         code: str,
+        job_id: str | None = None,
     ) -> dict:
         """Run one queued submission end-to-end and return API payload."""
         file_content = (
@@ -364,6 +457,14 @@ class CompetitionHandler(SimpleHTTPRequestHandler):
 
             filepath = sdir / f"{safe_name}.py"
             filepath.write_text(file_content)
+            if job_id:
+                self._append_job_event(
+                    job_id,
+                    "submission_saved",
+                    requested_name=name,
+                    submitted_name=name,
+                    strategy_path=str(filepath),
+                )
 
             error = self._run_sweep_with_timeout(rerun_name=name)
             if error:
@@ -372,7 +473,14 @@ class CompetitionHandler(SimpleHTTPRequestHandler):
                 raise RuntimeError(error)
 
             submitted_result = self._get_submission_result(name)
-            self._prune_submissions(author=None, keep=2)
+            pruned_names = self._prune_submissions(author=None, keep=2)
+            if job_id and pruned_names:
+                self._append_job_event(
+                    job_id,
+                    "prune_completed",
+                    pruned_count=len(pruned_names),
+                    pruned_names=pruned_names[:20],
+                )
             if submitted_result is not None:
                 submitted_result["kept_on_leaderboard"] = self._strategy_exists(name)
 
@@ -565,7 +673,7 @@ class CompetitionHandler(SimpleHTTPRequestHandler):
 
         return None
 
-    def _prune_submissions(self, author: str | None = None, keep: int = 2):
+    def _prune_submissions(self, author: str | None = None, keep: int = 2) -> list[str]:
         """Keep only the top N submissions per author.
 
         If author is provided, prunes only that author. If author is None, prunes all
@@ -575,11 +683,11 @@ class CompetitionHandler(SimpleHTTPRequestHandler):
 
         target_author_key = (author or "").strip().casefold() if author is not None else None
         if author is not None and not target_author_key:
-            return
+            return []
 
         index_path = Path(self.results_dir) / "index.json"
         if not index_path.exists():
-            return
+            return []
 
         with open(index_path) as f:
             index = json.load(f)
@@ -606,7 +714,7 @@ class CompetitionHandler(SimpleHTTPRequestHandler):
             to_delete.extend([name for name, _ in author_group[keep:]])
 
         if not to_delete:
-            return
+            return []
 
         for strat_name in to_delete:
             # Remove from index
@@ -632,6 +740,7 @@ class CompetitionHandler(SimpleHTTPRequestHandler):
 
         # Write updated index
         self._write_json_atomic(index_path, index)
+        return to_delete
 
     def _handle_leaderboard_with_extras(
         self,
@@ -704,6 +813,8 @@ class CompetitionHandler(SimpleHTTPRequestHandler):
             "timestamp": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
             "job_id": job_id,
             "event": event,
+            "hostname": socket.gethostname(),
+            "pid": os.getpid(),
         }
         row.update(extra)
 
@@ -712,6 +823,22 @@ class CompetitionHandler(SimpleHTTPRequestHandler):
         with cls._jobs_lock:
             with open(logs_path, "a") as f:
                 f.write(json.dumps(row) + "\n")
+
+    @classmethod
+    def _set_timing_fields(cls, job: dict, finished_mono: float):
+        submitted_mono = job.get("submitted_mono")
+        started_mono = job.get("started_mono")
+        if isinstance(started_mono, (int, float)):
+            job["run_duration_ms"] = int((finished_mono - started_mono) * 1000)
+        if isinstance(submitted_mono, (int, float)):
+            job["total_latency_ms"] = int((finished_mono - submitted_mono) * 1000)
+
+    @staticmethod
+    def _trim_text(value: str, max_len: int = 500) -> str:
+        value = str(value)
+        if len(value) <= max_len:
+            return value
+        return value[: max_len - 3] + "..."
 
     def _send_json(self, data, status=200):
         body = json.dumps(data).encode()
