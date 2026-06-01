@@ -501,6 +501,121 @@ async function loadLeaderboard() {
 /* ── submit handler ──────────────────────────────────────── */
 const btnSubmit = document.getElementById('btn-submit');
 const statusEl = document.getElementById('status');
+let activeJobId = null;
+let activePollTimer = null;
+
+function clearJobPolling() {
+  if (activePollTimer) {
+    clearTimeout(activePollTimer);
+    activePollTimer = null;
+  }
+}
+
+function withJobId(message, jobId) {
+  if (!jobId) return message;
+  return `${message} (job: ${jobId})`;
+}
+
+function renderSubmissionOutcome(result, fallbackName) {
+  const submittedName = result?.submitted || fallbackName;
+  const submitted = result?.submitted_result || null;
+  const leaderboard = result?.leaderboard || null;
+  const leaderboardSize = leaderboard?.strategies?.length ?? 0;
+
+  if (submitted) {
+    const score = submitted.category_score ?? submitted.avg_return ?? 0;
+    const scoreText = fmtPct(score);
+    const skipText = ((submitted.avg_skip_rate ?? 0) * 100).toFixed(1) + '%';
+    const authorRank = submitted.author_rank ?? '?';
+    const authorTotal = submitted.author_total ?? '?';
+
+    statusEl.className = 'success';
+    if (submitted.kept_on_leaderboard === false) {
+      statusEl.textContent = withJobId(
+        `Submitted! "${submittedName}" scored ${scoreText} (skip ${skipText}). ` +
+        `Not retained on leaderboard because only top 2 submissions per author are kept ` +
+        `(your author rank: ${authorRank}/${authorTotal}; visible leaderboard size: ${leaderboardSize}).`,
+        activeJobId
+      );
+    } else {
+      const overallRank = submitted.overall_rank ?? '?';
+      const overallTotal = submitted.overall_total ?? leaderboardSize;
+      statusEl.textContent = withJobId(
+        `Submitted! "${submittedName}" scored ${scoreText} (skip ${skipText}) and is ranked #${overallRank} of ${overallTotal}.`,
+        activeJobId
+      );
+    }
+  } else {
+    statusEl.className = 'success';
+    statusEl.textContent = withJobId(`Submitted! "${submittedName}" finished running.`, activeJobId);
+  }
+
+  if (leaderboard) {
+    lastHighlight = submittedName;
+    renderLeaderboard(leaderboard);
+  }
+}
+
+async function pollJobStatus(jobId, fallbackName, pollAfterMs) {
+  try {
+    const resp = await fetch(`/api/jobs/${encodeURIComponent(jobId)}`);
+    const data = await resp.json();
+
+    if (!resp.ok || data.error) {
+      throw new Error(data.error || 'Failed to fetch job status.');
+    }
+
+    const nextPollMs = data.poll_after_ms || pollAfterMs || 1500;
+
+    if (data.status === 'queued') {
+      const queuePos = data.queue_position;
+      const queueText = queuePos != null ? ` (position ${queuePos})` : '';
+      statusEl.className = '';
+      statusEl.innerHTML = `<span class="spinner"></span>${withJobId(`Queued${queueText}. Waiting to start...`, jobId)}`;
+      activePollTimer = setTimeout(
+        () => pollJobStatus(jobId, fallbackName, nextPollMs),
+        nextPollMs
+      );
+      return;
+    }
+
+    if (data.status === 'running') {
+      statusEl.className = '';
+      statusEl.innerHTML = `<span class="spinner"></span>${withJobId('Running simulation across all markets...', jobId)}`;
+      activePollTimer = setTimeout(
+        () => pollJobStatus(jobId, fallbackName, nextPollMs),
+        nextPollMs
+      );
+      return;
+    }
+
+    clearJobPolling();
+    activeJobId = null;
+    btnSubmit.disabled = false;
+
+    if (data.status === 'succeeded') {
+      renderSubmissionOutcome(data.result || {}, fallbackName);
+      return;
+    }
+
+    if (data.status === 'timed_out') {
+      statusEl.className = 'error';
+      statusEl.textContent = withJobId(data.error || 'Submission timed out after 120 seconds.', jobId);
+      await loadLeaderboard();
+      return;
+    }
+
+    statusEl.className = 'error';
+    statusEl.textContent = withJobId(data.error || `Submission failed (${data.status}).`, jobId);
+    await loadLeaderboard();
+  } catch (err) {
+    clearJobPolling();
+    activeJobId = null;
+    btnSubmit.disabled = false;
+    statusEl.className = 'error';
+    statusEl.textContent = withJobId('Network error: ' + err.message, jobId);
+  }
+}
 
 btnSubmit.addEventListener('click', async () => {
   const name = document.getElementById('strat-name').value.trim();
@@ -520,8 +635,10 @@ btnSubmit.addEventListener('click', async () => {
   }
 
   btnSubmit.disabled = true;
+  clearJobPolling();
+  activeJobId = null;
   statusEl.className = '';
-  statusEl.innerHTML = '<span class="spinner"></span>Running simulation across all markets...';
+  statusEl.innerHTML = '<span class="spinner"></span>Submitting strategy...';
 
   try {
     const resp = await fetch('/api/submit', {
@@ -535,48 +652,27 @@ btnSubmit.addEventListener('click', async () => {
     if (!resp.ok || data.error) {
       statusEl.className = 'error';
       statusEl.textContent = data.error || 'Submission failed.';
+      btnSubmit.disabled = false;
       return;
     }
 
-    const submittedName = data.submitted || name;
-    const submitted = data.submitted_result || data.strategies.find(s => s.name === submittedName);
-
-    statusEl.className = 'success';
-    if (submitted && data.submitted_result) {
-      const score = submitted.category_score ?? submitted.avg_return ?? 0;
-      const scoreText = fmtPct(score);
-      const skipText = ((submitted.avg_skip_rate ?? 0) * 100).toFixed(1) + '%';
-      const authorRank = submitted.author_rank ?? '?';
-      const authorTotal = submitted.author_total ?? '?';
-
-      if (submitted.kept_on_leaderboard === false) {
-        statusEl.textContent =
-          `Submitted! "${submittedName}" scored ${scoreText} (skip ${skipText}). ` +
-          `Not retained on leaderboard because only top 2 submissions per author are kept (your author rank: ${authorRank}/${authorTotal}; visible leaderboard size: ${data.strategies.length}).`;
-      } else {
-        const overallRank = submitted.overall_rank ?? '?';
-        const overallTotal = submitted.overall_total ?? data.strategies.length;
-        statusEl.textContent =
-          `Submitted! "${submittedName}" scored ${scoreText} (skip ${skipText}) and is ranked #${overallRank} of ${overallTotal}.`;
-      }
-    } else {
-      const rank = submitted ? submitted.rank : '?';
-      statusEl.textContent = `Submitted! "${submittedName}" ranked #${rank} of ${data.strategies.length}.`;
+    if (!data.job_id) {
+      statusEl.className = 'error';
+      statusEl.textContent = 'Submission failed: server did not return a job id.';
+      btnSubmit.disabled = false;
+      return;
     }
 
-    lastHighlight = submittedName;
-    renderLeaderboard(data);
-
-    // Show load errors if any
-    if (data.load_errors && data.load_errors.length > 0) {
-      const errNames = data.load_errors.map(e => e.filename).join(', ');
-      statusEl.textContent += ` (${data.load_errors.length} other file(s) had errors: ${errNames})`;
-    }
+    activeJobId = data.job_id;
+    const queuePos = data.queue_position;
+    const queueText = queuePos != null ? ` (position ${queuePos})` : '';
+    statusEl.className = '';
+    statusEl.innerHTML = `<span class="spinner"></span>${withJobId(`Queued${queueText}. Waiting to start...`, activeJobId)}`;
+    pollJobStatus(activeJobId, name, data.poll_after_ms || 1500);
   } catch (err) {
+    btnSubmit.disabled = false;
     statusEl.className = 'error';
     statusEl.textContent = 'Network error: ' + err.message;
-  } finally {
-    btnSubmit.disabled = false;
   }
 });
 

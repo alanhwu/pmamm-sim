@@ -22,9 +22,15 @@ Your strategy is scored by **median return on liquidity** across all markets. Th
 2. Write your strategy code in the editor (see "Writing your strategy" below)
 3. Give it a name and your name
 4. Click **Submit & Run**
-5. The simulation runs across all markets (~5 seconds) and the leaderboard updates
+5. Your submission is queued and gets a job id on the server
+6. The page polls for status updates (`queued` -> `running` -> `succeeded`/`failed`/`timed_out`) and refreshes the leaderboard when done
 
 `FeeQuote`, `PendingTrade`, and `TradeInfo` are automatically available in the web editor — you don't need to import them.
+
+### Runtime limit
+
+- Each submission has a **120-second execution limit** once it starts running.
+- If a run exceeds this limit, it is marked `timed_out` and does not update the leaderboard.
 
 ---
 

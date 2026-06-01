@@ -185,6 +185,31 @@ python -m pmamm_sim serve
 
 Submissions are sandboxed — only safe stdlib modules and `pmamm_sim.types` can be imported. See `pmamm_sim/sandbox.py` for the allowlist.
 
+### Competition API (async submit flow)
+
+`POST /api/submit` is asynchronous and queues a run, returning:
+
+```json
+{
+  "ok": true,
+  "job_id": "<id>",
+  "status": "queued",
+  "queue_position": 1,
+  "poll_after_ms": 1500
+}
+```
+
+Poll `GET /api/jobs/<job_id>` until terminal state:
+
+- `queued`
+- `running`
+- `succeeded` (includes final submission result + refreshed leaderboard payload)
+- `failed`
+- `timed_out` (execution exceeded 120 seconds)
+
+The 120-second limit applies to execution time after a job starts running (not queue wait time).
+Server-side job lifecycle events are appended to `results/job_events.jsonl` for debugging/audit trails.
+
 **For competitors**: [COMPETE.md](COMPETE.md) — strategy interface, available data fields, baselines, ideas, and rules.
 
 **For deployment**: [DEPLOY.md](DEPLOY.md) — hosting on AWS with a shareable URL via Cloudflare Tunnel.

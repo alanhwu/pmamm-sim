@@ -7,10 +7,15 @@ this server in trusted environments. See pmamm_sim/sandbox.py for details.
 
 import ast
 import json
+import multiprocessing as mp
 import os
+import queue
 import re
 import tempfile
 import threading
+import time
+import uuid
+from datetime import datetime, timezone
 from http.server import SimpleHTTPRequestHandler
 from pathlib import Path
 
@@ -74,8 +79,15 @@ class CompetitionHandler(SimpleHTTPRequestHandler):
     manifest: dict = {}
     market_specs: list = []
     _submit_lock = threading.RLock()
+    _jobs_lock = threading.RLock()
+    _job_queue: queue.Queue[str] = queue.Queue()
+    _jobs: dict[str, dict] = {}
+    _worker_thread: threading.Thread | None = None
+    _active_job_id: str | None = None
+    _default_poll_ms: int = 1500
 
     def __init__(self, *args, **kwargs):
+        self._ensure_job_worker()
         super().__init__(*args, directory=self.serve_root, **kwargs)
 
     def log_message(self, format, *args):
@@ -85,15 +97,19 @@ class CompetitionHandler(SimpleHTTPRequestHandler):
     # ── routing ──────────────────────────────────────────────
 
     def do_GET(self):
-        if self.path == "/api/leaderboard":
+        path = self.path.split("?", 1)[0]
+        if path == "/api/leaderboard":
             self._handle_leaderboard()
-        elif self.path == "/api/submissions":
+        elif path == "/api/submissions":
             self._handle_list_submissions()
+        elif path.startswith("/api/jobs/"):
+            self._handle_job_status(path.removeprefix("/api/jobs/"))
         else:
             super().do_GET()
 
     def do_POST(self):
-        if self.path == "/api/submit":
+        path = self.path.split("?", 1)[0]
+        if path == "/api/submit":
             self._handle_submit()
         else:
             self._send_json({"error": "Not found"}, 404)
@@ -101,40 +117,7 @@ class CompetitionHandler(SimpleHTTPRequestHandler):
     # ── API handlers ─────────────────────────────────────────
 
     def _handle_leaderboard(self):
-        index_path = Path(self.results_dir) / "index.json"
-        if not index_path.exists():
-            self._send_json({"strategies": [], "markets": [], "config": {}})
-            return
-
-        with open(index_path) as f:
-            index = json.load(f)
-
-        agg = index.get("aggregate", {})
-
-        def sort_key(kv):
-            return kv[1].get("category_score", kv[1]["avg_return"])
-
-        ranked = sorted(agg.items(), key=sort_key, reverse=True)
-
-        strategies = []
-        for rank, (name, stats) in enumerate(ranked, 1):
-            strategies.append({
-                "rank": rank,
-                "name": name,
-                "author": stats.get("author", ""),
-                "avg_return": stats["avg_return"],
-                "category_score": stats.get("category_score"),
-                "category_averages": stats.get("category_averages"),
-                "total_fees": stats["total_fees"],
-                "avg_skip_rate": stats["avg_skip_rate"],
-                "per_market": stats["per_market"],
-            })
-
-        self._send_json({
-            "strategies": strategies,
-            "markets": index.get("markets", []),
-            "config": index.get("config", {}),
-        })
+        self._send_json(self._build_leaderboard_payload())
 
     def _handle_list_submissions(self):
         sdir = Path(self.submissions_dir)
@@ -193,7 +176,155 @@ class CompetitionHandler(SimpleHTTPRequestHandler):
             }, 400)
             return
 
-        # Build and save the file — metadata AFTER user code so ours wins
+        self._ensure_job_worker()
+        job_id = uuid.uuid4().hex
+        submitted_at = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+        with self._jobs_lock:
+            self._jobs[job_id] = {
+                "job_id": job_id,
+                "status": "queued",
+                "requested_name": name,
+                "author": author,
+                "description": description,
+                "submitted_at": submitted_at,
+                "started_at": None,
+                "finished_at": None,
+                "error": None,
+                "result": None,
+                "payload": {
+                    "name": name,
+                    "author": author,
+                    "description": description,
+                    "code": code,
+                },
+            }
+
+        self._job_queue.put(job_id)
+        queue_position = self._get_queue_position(job_id, "queued")
+        self._append_job_event(job_id, "queued", queue_position=queue_position)
+
+        self._send_json({
+            "ok": True,
+            "job_id": job_id,
+            "status": "queued",
+            "queue_position": queue_position,
+            "poll_after_ms": self._default_poll_ms,
+            "submitted_at": submitted_at,
+            "submitted_name": name,
+        }, status=202)
+
+    def _handle_job_status(self, job_id: str):
+        if not job_id:
+            self._send_json({"error": "Job id is required"}, 400)
+            return
+
+        with self._jobs_lock:
+            job = self._jobs.get(job_id)
+            if job is None:
+                self._send_json({"error": "Job not found"}, 404)
+                return
+            payload = {
+                "ok": True,
+                "job_id": job["job_id"],
+                "status": job["status"],
+                "requested_name": job["requested_name"],
+                "author": job["author"],
+                "submitted_at": job["submitted_at"],
+                "started_at": job["started_at"],
+                "finished_at": job["finished_at"],
+                "error": job["error"],
+                "result": job["result"],
+                "poll_after_ms": self._default_poll_ms,
+            }
+
+        payload["queue_position"] = self._get_queue_position(job_id, payload["status"])
+        self._send_json(payload)
+
+    @classmethod
+    def _ensure_job_worker(cls):
+        with cls._jobs_lock:
+            if cls._worker_thread is not None and cls._worker_thread.is_alive():
+                return
+            cls._worker_thread = threading.Thread(
+                target=cls._job_worker_loop,
+                name="submission-job-worker",
+                daemon=True,
+            )
+            cls._worker_thread.start()
+
+    @classmethod
+    def _job_worker_loop(cls):
+        while True:
+            job_id = cls._job_queue.get()
+            try:
+                cls._run_one_queued_job(job_id)
+            finally:
+                cls._job_queue.task_done()
+
+    @classmethod
+    def _run_one_queued_job(cls, job_id: str):
+        with cls._jobs_lock:
+            job = cls._jobs.get(job_id)
+            if not job:
+                return
+            payload = job.get("payload", {})
+            job["status"] = "running"
+            job["started_at"] = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+            cls._active_job_id = job_id
+
+        cls._append_job_event(job_id, "running")
+
+        handler = cls.__new__(cls)
+
+        try:
+            result = handler._execute_submission(
+                name=payload.get("name", ""),
+                author=payload.get("author", "anonymous"),
+                description=payload.get("description", ""),
+                code=payload.get("code", ""),
+            )
+            with cls._jobs_lock:
+                current = cls._jobs.get(job_id)
+                if current:
+                    current["status"] = "succeeded"
+                    current["finished_at"] = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+                    current["result"] = result
+                    current["error"] = None
+                    current.pop("payload", None)
+            cls._append_job_event(job_id, "succeeded")
+        except TimeoutError as e:
+            with cls._jobs_lock:
+                current = cls._jobs.get(job_id)
+                if current:
+                    current["status"] = "timed_out"
+                    current["finished_at"] = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+                    current["error"] = str(e)
+                    current.pop("payload", None)
+            cls._append_job_event(job_id, "timed_out", error=str(e))
+        except Exception as e:
+            with cls._jobs_lock:
+                current = cls._jobs.get(job_id)
+                if current:
+                    current["status"] = "failed"
+                    current["finished_at"] = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+                    current["error"] = str(e)
+                    current.pop("payload", None)
+            cls._append_job_event(job_id, "failed", error=str(e))
+        finally:
+            with cls._jobs_lock:
+                if cls._active_job_id == job_id:
+                    cls._active_job_id = None
+
+    def _execute_submission(
+        self,
+        *,
+        name: str,
+        author: str,
+        description: str,
+        code: str,
+    ) -> dict:
+        """Run one queued submission end-to-end and return API payload."""
         file_content = (
             f'"""Submitted via web UI."""\n\n'
             f"from pmamm_sim.types import FeeQuote, PendingTrade, TradeInfo\n\n"
@@ -202,79 +333,60 @@ class CompetitionHandler(SimpleHTTPRequestHandler):
             f"AUTHOR = {author!r}\n"
             f"DESCRIPTION = {description!r}\n"
         )
+        ast.parse(file_content)
 
-        try:
-            ast.parse(file_content)
-        except SyntaxError as e:
-            self._send_json({
-                "error": f"Syntax error in generated file: {e.msg} (line {e.lineno})",
-            }, 400)
-            return
+        with self._submit_lock:
+            sdir = Path(self.submissions_dir)
+            sdir.mkdir(parents=True, exist_ok=True)
+            safe_name = re.sub(r"[^a-zA-Z0-9_]", "_", name)
+            safe_name = re.sub(r"_+", "_", safe_name).strip("_").lower()
 
-        submitted_result = None
-        try:
-            # Serialize all submit/update/prune operations to avoid race conditions
-            # when multiple users submit concurrently.
-            with self._submit_lock:
-                sdir = Path(self.submissions_dir)
-                sdir.mkdir(parents=True, exist_ok=True)
-                safe_name = re.sub(r"[^a-zA-Z0-9_]", "_", name)
-                safe_name = re.sub(r"_+", "_", safe_name).strip("_").lower()
+            # If this name already exists in the index, make it unique.
+            index_path = Path(self.results_dir) / "index.json"
+            if index_path.exists():
+                with open(index_path) as f:
+                    existing = set(json.load(f).get("strategies", []))
+                if name in existing:
+                    i = 2
+                    while f"{name} ({i})" in existing:
+                        i += 1
+                    name = f"{name} ({i})"
+                    file_content = (
+                        f'"""Submitted via web UI."""\n\n'
+                        f"from pmamm_sim.types import FeeQuote, PendingTrade, TradeInfo\n\n"
+                        f"{code}\n\n"
+                        f"STRATEGY_NAME = {name!r}\n"
+                        f"AUTHOR = {author!r}\n"
+                        f"DESCRIPTION = {description!r}\n"
+                    )
+                    safe_name = re.sub(r"[^a-zA-Z0-9_]", "_", name)
+                    safe_name = re.sub(r"_+", "_", safe_name).strip("_").lower()
 
-                # If this name already exists in the index, make it unique.
-                index_path = Path(self.results_dir) / "index.json"
-                if index_path.exists():
-                    with open(index_path) as f:
-                        existing = set(json.load(f).get("strategies", []))
-                    if name in existing:
-                        i = 2
-                        while f"{name} ({i})" in existing:
-                            i += 1
-                        name = f"{name} ({i})"
-                        # Update file content with new name
-                        file_content = (
-                            f'"""Submitted via web UI."""\n\n'
-                            f"from pmamm_sim.types import FeeQuote, PendingTrade, TradeInfo\n\n"
-                            f"{code}\n\n"
-                            f"STRATEGY_NAME = {name!r}\n"
-                            f"AUTHOR = {author!r}\n"
-                            f"DESCRIPTION = {description!r}\n"
-                        )
-                        safe_name = re.sub(r"[^a-zA-Z0-9_]", "_", name)
-                        safe_name = re.sub(r"_+", "_", safe_name).strip("_").lower()
+            filepath = sdir / f"{safe_name}.py"
+            filepath.write_text(file_content)
 
-                filepath = sdir / f"{safe_name}.py"
-                filepath.write_text(file_content)
+            error = self._run_sweep_with_timeout(rerun_name=name)
+            if error:
+                if error.startswith("Timed out"):
+                    raise TimeoutError(error)
+                raise RuntimeError(error)
 
-                # Run sweep in-process with preloaded data
-                error = self._run_sweep_with_timeout(rerun_name=name)
-                if error:
-                    self._send_json({"error": error}, 400)
-                    return
+            submitted_result = self._get_submission_result(name)
+            self._prune_submissions(author=None, keep=2)
+            if submitted_result is not None:
+                submitted_result["kept_on_leaderboard"] = self._strategy_exists(name)
 
-                # Capture the freshly computed score payload before pruning.
-                submitted_result = self._get_submission_result(name)
+            leaderboard = self._build_leaderboard_payload()
 
-                # Keep only the top N submissions for every author.
-                self._prune_submissions(author=None, keep=2)
-
-                if submitted_result is not None:
-                    submitted_result["kept_on_leaderboard"] = self._strategy_exists(name)
-        except Exception as e:
-            self._send_json({"error": f"Run failed: {e}"}, 500)
-            return
-
-        self._handle_leaderboard_with_extras(
-            submitted_name=name,
-            load_errors=[],
-            submitted_result=submitted_result,
-        )
+        return {
+            "submitted": name,
+            "submitted_result": submitted_result,
+            "leaderboard": leaderboard,
+            "load_errors": [],
+        }
 
     def _run_sweep_with_timeout(self, rerun_name: str | None = None) -> str | None:
         """Run only the NEW strategy and merge into existing index. Returns error string or None."""
-        from concurrent.futures import ProcessPoolExecutor
-        from datetime import datetime, timezone
-
         results_dir = Path(self.results_dir)
         results_dir.mkdir(parents=True, exist_ok=True)
         market_specs = self.market_specs
@@ -323,9 +435,13 @@ class CompetitionHandler(SimpleHTTPRequestHandler):
         # Only run strategies not already in the index
         existing_names = set(index.get("strategies", []))
         new_strategies = [s for s in all_strategies if s["name"] not in existing_names]
+        if rerun_name is not None:
+            new_strategies = [s for s in new_strategies if s["name"] == rerun_name]
 
         if not new_strategies and not all_strategies:
             return "No valid strategies to run"
+        if rerun_name is not None and not new_strategies:
+            return f'Submitted strategy "{rerun_name}" failed to load'
 
         # Run only new strategies
         for strat_spec in new_strategies:
@@ -352,8 +468,32 @@ class CompetitionHandler(SimpleHTTPRequestHandler):
                     market_output,
                 ))
 
-            with ProcessPoolExecutor() as pool:
-                results = list(pool.map(_run_one_market, tasks))
+            deadline = time.monotonic() + self.run_timeout
+            worker_count = max(1, min(len(tasks), os.cpu_count() or 1))
+            pool = mp.Pool(processes=worker_count)
+            timed_out = False
+            try:
+                async_results = [pool.apply_async(_run_one_market, (task,)) for task in tasks]
+                results = []
+                for async_result in async_results:
+                    remaining = deadline - time.monotonic()
+                    if remaining <= 0:
+                        timed_out = True
+                        break
+                    try:
+                        results.append(async_result.get(timeout=remaining))
+                    except mp.TimeoutError:
+                        timed_out = True
+                        break
+            finally:
+                if timed_out:
+                    pool.terminate()
+                else:
+                    pool.close()
+                pool.join()
+
+            if timed_out:
+                return f"Timed out after {self.run_timeout}s"
 
             per_market_agg = [r for r in results if r is not None]
 
@@ -500,20 +640,31 @@ class CompetitionHandler(SimpleHTTPRequestHandler):
         submitted_result=None,
     ):
         """Return leaderboard JSON after a submission, with extra metadata."""
+        payload = self._build_leaderboard_payload()
+        payload.update({
+            "ok": True,
+            "submitted": submitted_name,
+            "submitted_result": submitted_result,
+            "load_errors": load_errors,
+        })
+        self._send_json(payload)
+
+    # ── helpers ──────────────────────────────────────────────
+
+    def _build_leaderboard_payload(self) -> dict:
         index_path = Path(self.results_dir) / "index.json"
         if not index_path.exists():
-            self._send_json({"error": "Results not generated"}, 500)
-            return
+            return {"strategies": [], "markets": [], "config": {}}
 
         with open(index_path) as f:
             index = json.load(f)
 
         agg = index.get("aggregate", {})
-
-        def sort_key(kv):
-            return kv[1].get("category_score", kv[1]["avg_return"])
-
-        ranked = sorted(agg.items(), key=sort_key, reverse=True)
+        ranked = sorted(
+            agg.items(),
+            key=lambda kv: kv[1].get("category_score", kv[1]["avg_return"]),
+            reverse=True,
+        )
 
         strategies = []
         for rank, (name, stats) in enumerate(ranked, 1):
@@ -529,17 +680,38 @@ class CompetitionHandler(SimpleHTTPRequestHandler):
                 "per_market": stats["per_market"],
             })
 
-        self._send_json({
-            "ok": True,
-            "submitted": submitted_name,
-            "submitted_result": submitted_result,
+        return {
             "strategies": strategies,
             "markets": index.get("markets", []),
             "config": index.get("config", {}),
-            "load_errors": load_errors,
-        })
+        }
 
-    # ── helpers ──────────────────────────────────────────────
+    @classmethod
+    def _get_queue_position(cls, job_id: str, status: str) -> int | None:
+        if status == "running":
+            return 0
+        if status != "queued":
+            return None
+        with cls._job_queue.mutex:
+            queued = list(cls._job_queue.queue)
+        if job_id in queued:
+            return queued.index(job_id) + 1
+        return None
+
+    @classmethod
+    def _append_job_event(cls, job_id: str, event: str, **extra):
+        row = {
+            "timestamp": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
+            "job_id": job_id,
+            "event": event,
+        }
+        row.update(extra)
+
+        logs_path = Path(cls.results_dir) / "job_events.jsonl"
+        logs_path.parent.mkdir(parents=True, exist_ok=True)
+        with cls._jobs_lock:
+            with open(logs_path, "a") as f:
+                f.write(json.dumps(row) + "\n")
 
     def _send_json(self, data, status=200):
         body = json.dumps(data).encode()
