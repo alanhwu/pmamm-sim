@@ -171,7 +171,7 @@ Use `--strategies "FixedFee(100bps)"` only when you intentionally want a faster 
 
 ## Competition
 
-Submit fee strategies and compete on a leaderboard, ranked by average return on liquidity across all markets.
+Submit fee strategies and compete on a leaderboard, ranked by a geometric-mean return score across all markets (with clipped per-market returns and a 5% market-average fill-rate activity gate).
 
 ```bash
 # CLI

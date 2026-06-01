@@ -22,7 +22,7 @@ from http.server import SimpleHTTPRequestHandler
 from pathlib import Path
 
 from pmamm_sim.batch import (
-    load_manifest, sanitize_filename, _run_one_market,
+    load_manifest, sanitize_filename, _run_one_market, compute_competition_metrics,
 )
 from pmamm_sim.data_loader import load_polymarket_trades
 from pmamm_sim.loader import load_submissions
@@ -348,8 +348,11 @@ class CompetitionHandler(SimpleHTTPRequestHandler):
                 run_duration_ms=current.get("run_duration_ms") if current else None,
                 total_latency_ms=current.get("total_latency_ms") if current else None,
                 category_score=submitted.get("category_score"),
+                category_score_raw=submitted.get("category_score_raw"),
                 avg_return=submitted.get("avg_return"),
                 avg_skip_rate=submitted.get("avg_skip_rate"),
+                avg_fill_rate=submitted.get("avg_fill_rate"),
+                disqualified=submitted.get("disqualified"),
                 kept_on_leaderboard=submitted.get("kept_on_leaderboard"),
                 author_rank=submitted.get("author_rank"),
                 author_total=submitted.get("author_total"),
@@ -505,6 +508,7 @@ class CompetitionHandler(SimpleHTTPRequestHandler):
         if index_path.exists():
             with open(index_path) as f:
                 index = json.load(f)
+            self._refresh_aggregate_scores(index)
         else:
             index = {
                 "config": {
@@ -637,33 +641,22 @@ class CompetitionHandler(SimpleHTTPRequestHandler):
                 json.dump({"strategy_name": strat_name, "markets": market_files}, f)
 
             # Aggregate and merge into index
-            n = len(per_market_agg)
-            avg_ret = sum(m["return_on_liquidity"] for m in per_market_agg) / n if n else 0.0
-            total_fees = sum(m["fee_revenue"] for m in per_market_agg)
-            total_executed = sum(m["num_trades_executed"] for m in per_market_agg)
-            total_skipped = sum(m["num_trades_skipped"] for m in per_market_agg)
-            total_signals = total_executed + total_skipped
-            avg_skip_rate = total_skipped / total_signals if total_signals > 0 else 0.0
-
-            from statistics import median
-            all_returns = [m["return_on_liquidity"] for m in per_market_agg]
-            category_score = median(all_returns) if all_returns else 0.0
-            cat_returns: dict[str, list[float]] = {}
-            for m in per_market_agg:
-                cat_returns.setdefault(m["category"], []).append(m["return_on_liquidity"])
-            cat_medians = {cat: median(rets) for cat, rets in cat_returns.items()}
+            metrics = compute_competition_metrics(per_market_agg)
 
             index["strategies"].append(strat_name)
             index["strategy_files"][strat_name] = strat_dir_name + ".json"
             index["aggregate"][strat_name] = {
                 "author": strat_spec.get("author", ""),
-                "avg_return": avg_ret,
-                "category_score": category_score,
-                "category_averages": cat_medians,
-                "total_fees": total_fees,
-                "total_executed": total_executed,
-                "total_skipped": total_skipped,
-                "avg_skip_rate": avg_skip_rate,
+                "avg_return": metrics["avg_return"],
+                "category_score": metrics["category_score"],
+                "category_score_raw": metrics["category_score_raw"],
+                "category_averages": metrics["category_averages"],
+                "total_fees": metrics["total_fees"],
+                "total_executed": metrics["total_executed"],
+                "total_skipped": metrics["total_skipped"],
+                "avg_skip_rate": metrics["avg_skip_rate"],
+                "avg_fill_rate": metrics["avg_fill_rate"],
+                "disqualified": metrics["disqualified"],
                 "per_market": per_market_agg,
             }
 
@@ -691,6 +684,7 @@ class CompetitionHandler(SimpleHTTPRequestHandler):
 
         with open(index_path) as f:
             index = json.load(f)
+        self._refresh_aggregate_scores(index)
 
         agg = index.setdefault("aggregate", {})
         strategies = index.setdefault("strategies", [])
@@ -767,6 +761,7 @@ class CompetitionHandler(SimpleHTTPRequestHandler):
 
         with open(index_path) as f:
             index = json.load(f)
+        self._refresh_aggregate_scores(index)
 
         agg = index.get("aggregate", {})
         ranked = sorted(
@@ -783,9 +778,12 @@ class CompetitionHandler(SimpleHTTPRequestHandler):
                 "author": stats.get("author", ""),
                 "avg_return": stats["avg_return"],
                 "category_score": stats.get("category_score"),
+                "category_score_raw": stats.get("category_score_raw"),
                 "category_averages": stats.get("category_averages"),
                 "total_fees": stats["total_fees"],
                 "avg_skip_rate": stats["avg_skip_rate"],
+                "avg_fill_rate": stats.get("avg_fill_rate"),
+                "disqualified": stats.get("disqualified", False),
                 "per_market": stats["per_market"],
             })
 
@@ -848,6 +846,25 @@ class CompetitionHandler(SimpleHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(body)
 
+    def _refresh_aggregate_scores(self, index: dict):
+        """Recompute derived scoring fields from per-market summaries."""
+        agg = index.get("aggregate", {})
+        for stats in agg.values():
+            per_market = stats.get("per_market") or []
+            if not per_market:
+                continue
+            metrics = compute_competition_metrics(per_market)
+            stats["avg_return"] = metrics["avg_return"]
+            stats["category_score"] = metrics["category_score"]
+            stats["category_score_raw"] = metrics["category_score_raw"]
+            stats["category_averages"] = metrics["category_averages"]
+            stats["total_fees"] = metrics["total_fees"]
+            stats["total_executed"] = metrics["total_executed"]
+            stats["total_skipped"] = metrics["total_skipped"]
+            stats["avg_skip_rate"] = metrics["avg_skip_rate"]
+            stats["avg_fill_rate"] = metrics["avg_fill_rate"]
+            stats["disqualified"] = metrics["disqualified"]
+
     def _strategy_exists(self, strategy_name: str) -> bool:
         index_path = Path(self.results_dir) / "index.json"
         if not index_path.exists():
@@ -864,6 +881,7 @@ class CompetitionHandler(SimpleHTTPRequestHandler):
 
         with open(index_path) as f:
             index = json.load(f)
+        self._refresh_aggregate_scores(index)
 
         agg = index.get("aggregate", {})
         stats = agg.get(strategy_name)
@@ -896,7 +914,10 @@ class CompetitionHandler(SimpleHTTPRequestHandler):
             "author": stats.get("author", ""),
             "avg_return": stats.get("avg_return", 0.0),
             "category_score": stats.get("category_score", stats.get("avg_return", 0.0)),
+            "category_score_raw": stats.get("category_score_raw"),
             "avg_skip_rate": stats.get("avg_skip_rate", 0.0),
+            "avg_fill_rate": stats.get("avg_fill_rate", 0.0),
+            "disqualified": stats.get("disqualified", False),
             "overall_rank": overall_rank,
             "overall_total": len(ranked),
             "author_rank": author_rank,

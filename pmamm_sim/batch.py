@@ -1,4 +1,5 @@
 import json
+import math
 import os
 import re
 from concurrent.futures import ProcessPoolExecutor
@@ -20,6 +21,58 @@ def sanitize_filename(name: str) -> str:
     cleaned = re.sub(r"[^a-zA-Z0-9_]", "_", name)
     cleaned = re.sub(r"_+", "_", cleaned).strip("_")
     return f"strategy_{cleaned}"
+
+
+SCORE_CLIP_MIN = -0.999
+SCORE_CLIP_MAX = 4.0
+FILL_RATE_GATE = 0.05
+DISQUALIFIED_SCORE = -1.0
+
+
+def geometric_score(returns: list[float]) -> float:
+    """Geometric-mean score on clipped returns."""
+    if not returns:
+        return 0.0
+    clipped = [max(SCORE_CLIP_MIN, min(SCORE_CLIP_MAX, r)) for r in returns]
+    mean_log = sum(math.log1p(r) for r in clipped) / len(clipped)
+    return math.exp(mean_log) - 1.0
+
+
+def compute_competition_metrics(per_market_agg: list[dict]) -> dict:
+    """Compute aggregate metrics and competition score for one strategy."""
+    n = len(per_market_agg)
+    avg_ret = sum(m["return_on_liquidity"] for m in per_market_agg) / n if n else 0.0
+    total_fees = sum(m["fee_revenue"] for m in per_market_agg)
+    total_executed = sum(m["num_trades_executed"] for m in per_market_agg)
+    total_skipped = sum(m["num_trades_skipped"] for m in per_market_agg)
+    total_signals = total_executed + total_skipped
+    avg_skip_rate = total_skipped / total_signals if total_signals > 0 else 0.0
+    avg_fill_rate = (
+        sum(1.0 - m["skip_rate"] for m in per_market_agg) / n if n else 0.0
+    )
+
+    all_returns = [m["return_on_liquidity"] for m in per_market_agg]
+    category_score_raw = geometric_score(all_returns)
+    disqualified = avg_fill_rate < FILL_RATE_GATE
+    category_score = DISQUALIFIED_SCORE if disqualified else category_score_raw
+
+    cat_returns: dict[str, list[float]] = {}
+    for m in per_market_agg:
+        cat_returns.setdefault(m["category"], []).append(m["return_on_liquidity"])
+    cat_scores = {cat: geometric_score(rets) for cat, rets in cat_returns.items()}
+
+    return {
+        "avg_return": avg_ret,
+        "total_fees": total_fees,
+        "total_executed": total_executed,
+        "total_skipped": total_skipped,
+        "avg_skip_rate": avg_skip_rate,
+        "avg_fill_rate": avg_fill_rate,
+        "category_score": category_score,
+        "category_score_raw": category_score_raw,
+        "category_averages": cat_scores,
+        "disqualified": disqualified,
+    }
 
 
 def _run_one_market(args: tuple) -> dict:
@@ -254,43 +307,32 @@ def run_full_sweep(
         file_sizes[strat_dir_name + ".json"] = fsize
 
         # Aggregate for index
-        n = len(per_market_agg)
-        avg_ret = sum(m["return_on_liquidity"] for m in per_market_agg) / n if n else 0.0
-        total_fees = sum(m["fee_revenue"] for m in per_market_agg)
-        total_executed = sum(m["num_trades_executed"] for m in per_market_agg)
-        total_skipped = sum(m["num_trades_skipped"] for m in per_market_agg)
-        total_signals = total_executed + total_skipped
-        avg_skip_rate = total_skipped / total_signals if total_signals > 0 else 0.0
-
-        # Overall score: median across all markets
-        # Per-category: median within each category
-        from statistics import median
-        all_returns = [m["return_on_liquidity"] for m in per_market_agg]
-        category_score = median(all_returns) if all_returns else 0.0
-        cat_returns: dict[str, list[float]] = {}
-        for m in per_market_agg:
-            cat_returns.setdefault(m["category"], []).append(m["return_on_liquidity"])
-        cat_medians = {cat: median(rets) for cat, rets in cat_returns.items()}
+        metrics = compute_competition_metrics(per_market_agg)
 
         index["strategies"].append(strat_name)
         index["strategy_files"][strat_name] = strat_dir_name + ".json"
         index["aggregate"][strat_name] = {
             "author": strat_spec.get("author", ""),
-            "avg_return": avg_ret,
-            "category_score": category_score,
-            "category_averages": cat_medians,
-            "total_fees": total_fees,
-            "total_executed": total_executed,
-            "total_skipped": total_skipped,
-            "avg_skip_rate": avg_skip_rate,
+            "avg_return": metrics["avg_return"],
+            "category_score": metrics["category_score"],
+            "category_score_raw": metrics["category_score_raw"],
+            "category_averages": metrics["category_averages"],
+            "total_fees": metrics["total_fees"],
+            "total_executed": metrics["total_executed"],
+            "total_skipped": metrics["total_skipped"],
+            "avg_skip_rate": metrics["avg_skip_rate"],
+            "avg_fill_rate": metrics["avg_fill_rate"],
+            "disqualified": metrics["disqualified"],
             "per_market": per_market_agg,
         }
 
+        dq_suffix = "  [DQ: fill<5%]" if metrics["disqualified"] else ""
         print(
             f"  {strat_name + '...':<30} "
-            f"score: {category_score:+.1%}  "
-            f"fees: ${total_fees:,.0f}  "
-            f"(skip {avg_skip_rate:.1%})"
+            f"score: {metrics['category_score']:+.1%}  "
+            f"fees: ${metrics['total_fees']:,.0f}  "
+            f"(skip {metrics['avg_skip_rate']:.1%}, fill {metrics['avg_fill_rate']:.1%})"
+            f"{dq_suffix}"
         )
 
     # Write index

@@ -12,7 +12,7 @@ Your strategy decides: **how much to charge on each trade?**
 - Charge too much: trades get skipped (they fall inside the "no-arbitrage band") and you earn nothing
 - The sweet spot depends on volatility, time to resolution, and market dynamics
 
-Your strategy is scored by **median return on liquidity** across all markets. The leaderboard ranks everyone's strategies against the same data.
+Your strategy is scored by a **geometric-mean return score** across all markets (with per-market returns clipped for robustness). Strategies with **market-average fill rate below 5%** are disqualified from ranking.
 
 ---
 

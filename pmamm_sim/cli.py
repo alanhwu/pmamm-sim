@@ -333,16 +333,19 @@ def _print_leaderboard(results_dir: str):
     print(f"\n{'=' * 80}")
     print(f"  LEADERBOARD  ({n_markets} markets, categories: {', '.join(categories)})")
     print(f"{'=' * 80}")
-    print(f"  {'Rank':<6} {'Strategy':<28} {'Score':>14} {'Avg Return':>12} {'Skip':>7}")
-    print(f"  {'----':<6} {'--------':<28} {'----------':>14} {'----------':>12} {'----':>7}")
+    print(f"  {'Rank':<6} {'Strategy':<28} {'Score':>14} {'Avg Return':>12} {'Skip':>7} {'Fill':>7}")
+    print(f"  {'----':<6} {'--------':<28} {'----------':>14} {'----------':>12} {'----':>7} {'----':>7}")
 
     for i, (name, stats) in enumerate(ranked, 1):
         score = stats.get("category_score", stats["avg_return"])
+        disqualified = stats.get("disqualified", False)
         avg_ret = stats["avg_return"]
         skip_rate = stats["avg_skip_rate"]
+        fill_rate = stats.get("avg_fill_rate", 1.0 - skip_rate)
+        score_label = "DQ" if disqualified else f"{score:+.2%}"
         medal = {1: "1st", 2: "2nd", 3: "3rd"}.get(i, f"{i}th")
         print(
-            f"  {medal:<6} {name:<28} {score:>+13.2%} {avg_ret:>+11.2%} {skip_rate:>6.1%}"
+            f"  {medal:<6} {name:<28} {score_label:>14} {avg_ret:>+11.2%} {skip_rate:>6.1%} {fill_rate:>6.1%}"
         )
 
     # Per-category breakdown

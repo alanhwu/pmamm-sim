@@ -430,8 +430,9 @@ function buildTable(sorted, allStrategies, markets, scoreMode, category) {
       score = s.category_score != null ? s.category_score : s.avg_return;
     }
 
-    const retClass = score != null && score >= 0 ? 'green' : 'red';
-    const scoreStr = score != null ? fmtPct(score) : 'n/a';
+    const disqualified = !!s.disqualified;
+    const retClass = disqualified ? 'red' : (score != null && score >= 0 ? 'green' : 'red');
+    const scoreStr = disqualified ? 'DQ' : (score != null ? fmtPct(score) : 'n/a');
 
     // Filter per_market to this category if applicable
     const detailMarkets = category
@@ -524,15 +525,22 @@ function renderSubmissionOutcome(result, fallbackName) {
 
   if (submitted) {
     const score = submitted.category_score ?? submitted.avg_return ?? 0;
-    const scoreText = fmtPct(score);
+    const scoreText = submitted.disqualified ? 'DQ' : fmtPct(score);
     const skipText = ((submitted.avg_skip_rate ?? 0) * 100).toFixed(1) + '%';
+    const fillText = ((submitted.avg_fill_rate ?? (1 - (submitted.avg_skip_rate ?? 0))) * 100).toFixed(1) + '%';
     const authorRank = submitted.author_rank ?? '?';
     const authorTotal = submitted.author_total ?? '?';
 
     statusEl.className = 'success';
-    if (submitted.kept_on_leaderboard === false) {
+    if (submitted.disqualified) {
       statusEl.textContent = withJobId(
-        `Submitted! "${submittedName}" scored ${scoreText} (skip ${skipText}). ` +
+        `Submitted! "${submittedName}" is disqualified (market-average fill rate ${fillText} < 5.0%). ` +
+        `Raw geo score: ${fmtPct(submitted.category_score_raw ?? score)} (skip ${skipText}).`,
+        activeJobId
+      );
+    } else if (submitted.kept_on_leaderboard === false) {
+      statusEl.textContent = withJobId(
+        `Submitted! "${submittedName}" scored ${scoreText} (skip ${skipText}, fill ${fillText}). ` +
         `Not retained on leaderboard because only top 2 submissions per author are kept ` +
         `(your author rank: ${authorRank}/${authorTotal}; visible leaderboard size: ${leaderboardSize}).`,
         activeJobId
@@ -541,7 +549,7 @@ function renderSubmissionOutcome(result, fallbackName) {
       const overallRank = submitted.overall_rank ?? '?';
       const overallTotal = submitted.overall_total ?? leaderboardSize;
       statusEl.textContent = withJobId(
-        `Submitted! "${submittedName}" scored ${scoreText} (skip ${skipText}) and is ranked #${overallRank} of ${overallTotal}.`,
+        `Submitted! "${submittedName}" scored ${scoreText} (skip ${skipText}, fill ${fillText}) and is ranked #${overallRank} of ${overallTotal}.`,
         activeJobId
       );
     }
