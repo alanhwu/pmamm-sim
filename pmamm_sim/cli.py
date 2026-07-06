@@ -47,6 +47,9 @@ def main():
                             help="Exclude built-in strategies from competition runs")
         parser.add_argument("--include-hidden", action="store_true",
                             help="Include manifest markets marked hidden=true")
+        parser.add_argument("--enable-visualizer", action="store_true",
+                            help="Serve the visualizer page and results JSON files "
+                                 "(keep off until the competition is over)")
         args = parser.parse_args(sys.argv[2:])
         args.include_builtins = not args.no_builtins
         _run_serve(args)
@@ -254,12 +257,16 @@ def _run_serve(args):
     CompetitionHandler.liquidity = args.liquidity
     CompetitionHandler.include_builtins = args.include_builtins
     CompetitionHandler.include_hidden = args.include_hidden
+    CompetitionHandler.visualizer_enabled = args.enable_visualizer
     CompetitionHandler.manifest = manifest
     CompetitionHandler.market_specs = market_specs
 
     with http.server.ThreadingHTTPServer(("", args.port), CompetitionHandler) as httpd:
         print(f"Serving at http://localhost:{args.port}")
-        print(f"  Visualizer:  http://localhost:{args.port}/visualizer.html")
+        if args.enable_visualizer:
+            print(f"  Visualizer:  http://localhost:{args.port}/visualizer.html")
+        else:
+            print("  Visualizer:  disabled (start with --enable-visualizer to serve it)")
         print(f"  Competition: http://localhost:{args.port}/compete.html")
         print("Press Ctrl+C to stop")
         try:

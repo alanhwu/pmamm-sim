@@ -273,7 +273,7 @@
 <div id="top-bar">
   <h1>Prediction Market AMM Dynamic Fee Competition</h1>
   <div class="nav-links">
-    <a href="/visualizer.html">Visualizer</a>
+    <a href="/visualizer.html" id="visualizer-link" style="display:none">Visualizer</a>
   </div>
 </div>
 
@@ -625,6 +625,9 @@ async function loadLeaderboard() {
     const resp = await fetch('/api/leaderboard');
     if (!resp.ok) throw new Error(resp.statusText);
     const data = await resp.json();
+    if (data.config?.visualizer_enabled) {
+      document.getElementById('visualizer-link').style.display = '';
+    }
     renderLeaderboard(data);
   } catch (err) {
     document.getElementById('lb-subtitle').textContent =

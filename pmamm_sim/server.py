@@ -115,6 +115,9 @@ class CompetitionHandler(SimpleHTTPRequestHandler):
         liquidity:       initial LP deposit per market
         include_builtins: whether to include built-in strategies in runs
         include_hidden:  whether to include manifest hidden markets
+        visualizer_enabled: whether to serve the visualizer page and its
+                         results JSON files (off during the competition;
+                         flip on once it's over)
         manifest:        preloaded manifest dict
         market_specs:    preloaded market specs list
     """
@@ -126,6 +129,7 @@ class CompetitionHandler(SimpleHTTPRequestHandler):
     liquidity: float = 10_000
     include_builtins: bool = False
     include_hidden: bool = False
+    visualizer_enabled: bool = False
     run_timeout: int = 120
     manifest: dict = {}
     market_specs: list = []
@@ -158,13 +162,16 @@ class CompetitionHandler(SimpleHTTPRequestHandler):
         raw = self.path.split("?", 1)[0]
         return posixpath.normpath(unquote(raw))
 
-    #: Only these files (plus result JSONs) are served statically. The serve
-    #: root is the project root, which also holds submissions/, data/ (hidden
-    #: markets), keys, and logs — none of which competitors may fetch.
-    _public_pages = frozenset({"/compete.html", "/visualizer.html", "/favicon.ico"})
-
     def _is_allowed_static(self, path: str) -> bool:
-        if path in self._public_pages:
+        """Static allowlist. The serve root is the project root, which also
+        holds submissions/, data/ (hidden markets), keys, and logs — none of
+        which competitors may fetch. The visualizer page and the results JSON
+        files it reads are gated behind `visualizer_enabled`."""
+        if path in ("/compete.html", "/favicon.ico"):
+            return True
+        if not self.visualizer_enabled:
+            return False
+        if path == "/visualizer.html":
             return True
         prefix = f"/{Path(self.results_dir).name}/"
         return path.startswith(prefix) and path.endswith(".json")
@@ -177,7 +184,7 @@ class CompetitionHandler(SimpleHTTPRequestHandler):
             self._handle_list_submissions()
         elif path.startswith("/api/jobs/"):
             self._handle_job_status(path.removeprefix("/api/jobs/"))
-        elif self._is_results_index_json(path):
+        elif self.visualizer_enabled and self._is_results_index_json(path):
             self._serve_sanitized_results_json(path)
         elif path == "/":
             self.send_response(302)
@@ -888,7 +895,11 @@ class CompetitionHandler(SimpleHTTPRequestHandler):
     def _build_leaderboard_payload(self) -> dict:
         index_path = Path(self.results_dir) / "index.json"
         if not index_path.exists():
-            return {"strategies": [], "markets": [], "config": {}}
+            return {
+                "strategies": [],
+                "markets": [],
+                "config": {"visualizer_enabled": self.visualizer_enabled},
+            }
 
         with open(index_path) as f:
             index = json.load(f)
@@ -925,10 +936,12 @@ class CompetitionHandler(SimpleHTTPRequestHandler):
             })
 
         served_markets = [m for m in index.get("markets", []) if not m.get("hidden")]
+        config = dict(index.get("config", {}))
+        config["visualizer_enabled"] = self.visualizer_enabled
         return {
             "strategies": strategies,
             "markets": served_markets,
-            "config": index.get("config", {}),
+            "config": config,
         }
 
     @classmethod
