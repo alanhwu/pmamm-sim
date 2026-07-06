@@ -10,6 +10,7 @@ import hashlib
 import json
 import multiprocessing as mp
 import os
+import posixpath
 import queue
 import re
 import socket
@@ -20,6 +21,7 @@ import uuid
 from datetime import datetime, timezone
 from http.server import SimpleHTTPRequestHandler
 from pathlib import Path
+from urllib.parse import unquote
 
 from pmamm_sim.batch import (
     load_manifest, sanitize_filename, _run_one_market, compute_competition_metrics,
@@ -145,8 +147,30 @@ class CompetitionHandler(SimpleHTTPRequestHandler):
 
     # ── routing ──────────────────────────────────────────────
 
+    def _request_path(self) -> str:
+        """Decoded, normalized request path.
+
+        Mirrors the decoding SimpleHTTPRequestHandler.translate_path applies
+        before touching the filesystem, so route checks (sanitizers, the
+        static allowlist) can't be bypassed with percent-encoding or dot
+        segments (e.g. /results/index%2ejson or /x/../submissions/foo.py).
+        """
+        raw = self.path.split("?", 1)[0]
+        return posixpath.normpath(unquote(raw))
+
+    #: Only these files (plus result JSONs) are served statically. The serve
+    #: root is the project root, which also holds submissions/, data/ (hidden
+    #: markets), keys, and logs — none of which competitors may fetch.
+    _public_pages = frozenset({"/compete.html", "/visualizer.html", "/favicon.ico"})
+
+    def _is_allowed_static(self, path: str) -> bool:
+        if path in self._public_pages:
+            return True
+        prefix = f"/{Path(self.results_dir).name}/"
+        return path.startswith(prefix) and path.endswith(".json")
+
     def do_GET(self):
-        path = self.path.split("?", 1)[0]
+        path = self._request_path()
         if path == "/api/leaderboard":
             self._handle_leaderboard()
         elif path == "/api/submissions":
@@ -155,8 +179,20 @@ class CompetitionHandler(SimpleHTTPRequestHandler):
             self._handle_job_status(path.removeprefix("/api/jobs/"))
         elif self._is_results_index_json(path):
             self._serve_sanitized_results_json(path)
-        else:
+        elif path == "/":
+            self.send_response(302)
+            self.send_header("Location", "/compete.html")
+            self.end_headers()
+        elif self._is_allowed_static(path):
             super().do_GET()
+        else:
+            self.send_error(404, "Not found")
+
+    def do_HEAD(self):
+        if self._is_allowed_static(self._request_path()):
+            super().do_HEAD()
+        else:
+            self.send_error(404, "Not found")
 
     def _is_results_index_json(self, path: str) -> bool:
         """True for the served index.json / per-strategy index files under the
@@ -209,7 +245,7 @@ class CompetitionHandler(SimpleHTTPRequestHandler):
         self._send_json({
             "submissions": [
                 {"name": e["name"], "author": e["author"],
-                 "description": e["description"], "source": e["source"]}
+                 "description": e["description"]}
                 for e in entries
             ],
             "errors": [
