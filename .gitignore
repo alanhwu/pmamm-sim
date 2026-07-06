@@ -12,6 +12,10 @@ ob_cache/
 results.json
 results/
 
+# Market trade data + manifest — provisioned separately, not tracked
+data/
+data.zip
+
 # Local reference clone — not part of this project
 amm-challenge/
 

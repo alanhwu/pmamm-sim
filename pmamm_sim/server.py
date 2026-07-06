@@ -72,6 +72,36 @@ def preload_market_data(
     return manifest, market_specs
 
 
+def sanitize_index_for_serving(index: dict) -> dict:
+    """Return a copy of an index dict safe to send to competitors.
+
+    Hidden markets stay in the ON-DISK index (so _refresh_aggregate_scores can
+    fold them into the score), but must never be served: this strips them from
+    the top-level market list and from every strategy's per_market. Aggregate
+    scores are left untouched — they were computed over the full set including
+    hidden markets. Market list and per_market are filtered by the same
+    `hidden` predicate, preserving the positional alignment the visualizer
+    relies on.
+    """
+    out = dict(index)
+    out["markets"] = [m for m in index.get("markets", []) if not m.get("hidden")]
+    agg = index.get("aggregate", {})
+    sanitized_agg = {}
+    for name, stats in agg.items():
+        s = dict(stats)
+        s["per_market"] = [m for m in (stats.get("per_market") or []) if not m.get("hidden")]
+        sanitized_agg[name] = s
+    out["aggregate"] = sanitized_agg
+    return out
+
+
+def sanitize_strategy_file_for_serving(doc: dict) -> dict:
+    """Strip hidden market rows from a per-strategy index file before serving."""
+    out = dict(doc)
+    out["markets"] = [m for m in doc.get("markets", []) if not m.get("hidden")]
+    return out
+
+
 class CompetitionHandler(SimpleHTTPRequestHandler):
     """Extends static file serving with competition API routes.
 
@@ -123,8 +153,39 @@ class CompetitionHandler(SimpleHTTPRequestHandler):
             self._handle_list_submissions()
         elif path.startswith("/api/jobs/"):
             self._handle_job_status(path.removeprefix("/api/jobs/"))
+        elif self._is_results_index_json(path):
+            self._serve_sanitized_results_json(path)
         else:
             super().do_GET()
+
+    def _is_results_index_json(self, path: str) -> bool:
+        """True for the served index.json / per-strategy index files under the
+        results dir (the raw files the visualizer fetches). Deep per-market
+        files (results/<strat>/market_XXXX.json) are already hidden-free and
+        pass straight through."""
+        prefix = f"/{Path(self.results_dir).name}/"
+        if not path.startswith(prefix) or not path.endswith(".json"):
+            return False
+        rest = path[len(prefix):]
+        return "/" not in rest  # top-level only: index.json or <strategy>.json
+
+    def _serve_sanitized_results_json(self, path: str):
+        rest = path[len(f"/{Path(self.results_dir).name}/"):]
+        fs_path = Path(self.results_dir) / rest
+        if not fs_path.is_file():
+            super().do_GET()
+            return
+        try:
+            with open(fs_path) as f:
+                doc = json.load(f)
+        except (OSError, json.JSONDecodeError):
+            super().do_GET()
+            return
+        if isinstance(doc, dict) and "aggregate" in doc:
+            doc = sanitize_index_for_serving(doc)
+        elif isinstance(doc, dict) and "markets" in doc:
+            doc = sanitize_strategy_file_for_serving(doc)
+        self._send_json(doc)
 
     def do_POST(self):
         path = self.path.split("?", 1)[0]
@@ -638,7 +699,10 @@ class CompetitionHandler(SimpleHTTPRequestHandler):
 
             per_market_agg = [r for r in results if r is not None]
 
-            # Write strategy index
+            # Write strategy index. Every market is stored (tagged `hidden`) so
+            # the score recompute in _refresh_aggregate_scores sees the full
+            # set. Hidden markets are stripped at SERVE time so competitors
+            # never see their per-market performance on the hidden set.
             market_files = []
             task_idx = 0
             for i, ms in enumerate(market_specs):
@@ -649,8 +713,10 @@ class CompetitionHandler(SimpleHTTPRequestHandler):
                 if r is None:
                     continue
                 hidden = ms["spec"].get("hidden", False)
+                r["hidden"] = hidden  # tag per_market_agg entry (same object)
                 entry = {
                     "question": r["question"],
+                    "hidden": hidden,
                     "summary": {
                         "fee_revenue": r["fee_revenue"],
                         "resolution_pnl": 0,
@@ -801,6 +867,12 @@ class CompetitionHandler(SimpleHTTPRequestHandler):
 
         strategies = []
         for rank, (name, stats) in enumerate(ranked, 1):
+            # Strip hidden markets from served per-market detail. Scores above
+            # already include hidden markets; competitors must not see their
+            # per-market performance on the hidden set.
+            served_per_market = [
+                m for m in (stats.get("per_market") or []) if not m.get("hidden")
+            ]
             strategies.append({
                 "rank": rank,
                 "name": name,
@@ -813,12 +885,13 @@ class CompetitionHandler(SimpleHTTPRequestHandler):
                 "avg_skip_rate": stats["avg_skip_rate"],
                 "avg_fill_rate": stats.get("avg_fill_rate"),
                 "disqualified": stats.get("disqualified", False),
-                "per_market": stats["per_market"],
+                "per_market": served_per_market,
             })
 
+        served_markets = [m for m in index.get("markets", []) if not m.get("hidden")]
         return {
             "strategies": strategies,
-            "markets": index.get("markets", []),
+            "markets": served_markets,
             "config": index.get("config", {}),
         }
 

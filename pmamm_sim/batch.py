@@ -56,8 +56,14 @@ def compute_competition_metrics(per_market_agg: list[dict]) -> dict:
     disqualified = avg_fill_rate < FILL_RATE_GATE
     category_score = DISQUALIFIED_SCORE if disqualified else category_score_raw
 
+    # Per-category breakdown is computed over NON-hidden markets only, so it is
+    # safe to expose to competitors. The overall score above still includes
+    # hidden markets. (Categories composed entirely of hidden markets therefore
+    # never appear here.)
     cat_returns: dict[str, list[float]] = {}
     for m in per_market_agg:
+        if m.get("hidden", False):
+            continue
         cat_returns.setdefault(m["category"], []).append(m["return_on_liquidity"])
     cat_scores = {cat: geometric_score(rets) for cat, rets in cat_returns.items()}
 
@@ -282,8 +288,11 @@ def run_full_sweep(
 
         per_market_agg = [r for r in results if r is not None]
 
-        # Write strategy index (lightweight — points to per-market files)
-        # Hidden markets get summary but no file pointer (no trade data to drill into)
+        # Write strategy index (lightweight — points to per-market files).
+        # Every market is stored (tagged with `hidden`) so the score recompute
+        # in _refresh_aggregate_scores sees the full set. Hidden markets are
+        # stripped at SERVE time so competitors never see their per-market
+        # performance on the hidden set.
         market_files = []
         task_idx = 0
         for i, ms in enumerate(market_specs):
@@ -294,8 +303,10 @@ def run_full_sweep(
             if r is None:
                 continue
             hidden = ms["spec"].get("hidden", False)
+            r["hidden"] = hidden  # tag per_market_agg entry (same object)
             entry = {
                 "question": r["question"],
+                "hidden": hidden,
                 "summary": {
                     "fee_revenue": r["fee_revenue"],
                     "resolution_pnl": 0,
@@ -316,7 +327,8 @@ def run_full_sweep(
         fsize = os.path.getsize(strat_index_path)
         file_sizes[strat_dir_name + ".json"] = fsize
 
-        # Aggregate for index
+        # Aggregate for index — computed over the FULL set (incl. hidden) so
+        # hidden markets contribute to the score.
         metrics = compute_competition_metrics(per_market_agg)
 
         index["strategies"].append(strat_name)
